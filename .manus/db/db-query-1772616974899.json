@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `provider_wallets` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `providerId` int NOT NULL,\n  `providerRole` enum('zone_manager','carrier_driver') NOT NULL,\n  `availableBalance` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `totalEarned` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `totalWithdrawn` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `pendingBalance` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `provider_wallets_id` PRIMARY KEY(`id`),\n  CONSTRAINT `provider_wallets_providerId_unique` UNIQUE(`providerId`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute CREATE TABLE IF NOT EXISTS `provider_wallets` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `providerId` int NOT NULL,\n  `providerRole` enum('zone_manager','carrier_driver') NOT NULL,\n  `availableBalance` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `totalEarned` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `totalWithdrawn` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `pendingBalance` decimal(12,2) NOT NULL DEFAULT '0.00',\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `provider_wallets_id` PRIMARY KEY(`id`),\n  CONSTRAINT `provider_wallets_providerId_unique` UNIQUE(`providerId`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 747
+}

@@ -1,0 +1,28 @@
+{
+  "query": "\nSELECT 'financial_settings' AS tbl, CAST(withdrawals_enabled AS CHAR) AS enabled, CAST(withdrawal_minimum AS CHAR) AS min_amt, CAST(withdrawal_commission_percent AS CHAR) AS commission\nFROM financial_settings\nUNION ALL\nSELECT 'withdrawal_config', CAST(withdrawals_enabled AS CHAR), CAST(minimum_amount AS CHAR), CAST(commission_percentage AS CHAR)\nFROM withdrawal_config\nUNION ALL\nSELECT 'platform_wallet', CAST(total_commissions AS CHAR), CAST(available_balance AS CHAR), CAST(pending_settlement AS CHAR)\nFROM platform_wallet;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nSELECT 'financial_settings' AS tbl, CAST(withdrawals_enabled AS CHAR) AS enabled, CAST(withdrawal_minimum AS CHAR) AS min_amt, CAST(withdrawal_commission_percent AS CHAR) AS commission\nFROM financial_settings\nUNION ALL\nSELECT 'withdrawal_config', CAST(withdrawals_enabled AS CHAR), CAST(minimum_amount AS CHAR), CAST(commission_percentage AS CHAR)\nFROM withdrawal_config\nUNION ALL\nSELECT 'platform_wallet', CAST(total_commissions AS CHAR), CAST(available_balance AS CHAR), CAST(pending_settlement AS CHAR)\nFROM platform_wallet;\n",
+  "rows": [
+    {
+      "tbl": "platform_wallet",
+      "enabled": "0.00",
+      "min_amt": "0.00",
+      "commission": "0.00"
+    },
+    {
+      "tbl": "financial_settings",
+      "enabled": "0",
+      "min_amt": "50.00",
+      "commission": "10.00"
+    },
+    {
+      "tbl": "withdrawal_config",
+      "enabled": "1",
+      "min_amt": "50.00",
+      "commission": "10.00"
+    }
+  ],
+  "messages": [],
+  "stdout": "tbl\tenabled\tmin_amt\tcommission\nplatform_wallet\t0.00\t0.00\t0.00\nfinancial_settings\t0\t50.00\t10.00\nwithdrawal_config\t1\t50.00\t10.00\n",
+  "stderr": "",
+  "execution_time_ms": 348
+}

@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS withdrawal_settlements (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  batch_id VARCHAR(100) UNIQUE,\n  status VARCHAR(50) NOT NULL DEFAULT 'pending',\n  total_withdrawals INT NOT NULL DEFAULT 0,\n  total_amount DECIMAL(15,2) NOT NULL DEFAULT 0,\n  successful_count INT NOT NULL DEFAULT 0,\n  failed_count INT NOT NULL DEFAULT 0,\n  mtn_batch_id VARCHAR(100),\n  mtn_status VARCHAR(50),\n  created_at TIMESTAMP DEFAULT NOW(),\n  completed_at TIMESTAMP NULL,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),\n  notes TEXT,\n  admin_id INT NULL\n);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nCREATE TABLE IF NOT EXISTS withdrawal_settlements (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  batch_id VARCHAR(100) UNIQUE,\n  status VARCHAR(50) NOT NULL DEFAULT 'pending',\n  total_withdrawals INT NOT NULL DEFAULT 0,\n  total_amount DECIMAL(15,2) NOT NULL DEFAULT 0,\n  successful_count INT NOT NULL DEFAULT 0,\n  failed_count INT NOT NULL DEFAULT 0,\n  mtn_batch_id VARCHAR(100),\n  mtn_status VARCHAR(50),\n  created_at TIMESTAMP DEFAULT NOW(),\n  completed_at TIMESTAMP NULL,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),\n  notes TEXT,\n  admin_id INT NULL\n);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 577
+}

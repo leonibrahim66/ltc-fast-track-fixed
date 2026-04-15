@@ -1,0 +1,27 @@
+# Backend-only Dockerfile (standalone, no Expo/React Native dependencies)
+FROM node:20-alpine
+
+WORKDIR /app/server
+
+# Copy only backend files
+COPY server/package.json server/package-lock.json ./
+
+# Install dependencies (both production and dev for tsx)
+RUN npm ci && npm cache clean --force
+
+# Copy backend source
+COPY server/simple ./simple
+COPY server/tsconfig.json ./
+
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
+
+# Start server using tsx
+CMD ["npx", "tsx", "simple/index.ts"]

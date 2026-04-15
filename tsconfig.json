@@ -1,0 +1,39 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "strict": false,
+    "types": [
+      "node",
+      "nativewind/types"
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@shared/*": [
+        "./shared/*"
+      ]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "server",
+    "tests",
+    "drizzle",
+    "drizzle.config.ts",
+    "contexts/**",
+    "lib/supabase*.ts",
+    "lib/firebase.ts",
+    "lib/export-utils.ts",
+    "lib/driver-tracking-service.ts"
+  ]
+}

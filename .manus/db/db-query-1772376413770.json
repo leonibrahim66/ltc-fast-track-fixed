@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS financial_settings (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  withdrawals_enabled BOOLEAN NOT NULL DEFAULT FALSE,\n  withdrawal_minimum DECIMAL(15,2) NOT NULL DEFAULT 50.00,\n  withdrawal_commission_percent DECIMAL(5,2) NOT NULL DEFAULT 10.00,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),\n  updated_by INT NULL,\n  CONSTRAINT withdrawal_minimum_positive CHECK (withdrawal_minimum > 0),\n  CONSTRAINT commission_valid CHECK (withdrawal_commission_percent >= 0 AND withdrawal_commission_percent <= 100)\n);\n\nINSERT INTO financial_settings (id, withdrawals_enabled, withdrawal_minimum, withdrawal_commission_percent)\nSELECT UUID(), FALSE, 50.00, 10.00\nWHERE NOT EXISTS (SELECT 1 FROM financial_settings LIMIT 1);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nCREATE TABLE IF NOT EXISTS financial_settings (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  withdrawals_enabled BOOLEAN NOT NULL DEFAULT FALSE,\n  withdrawal_minimum DECIMAL(15,2) NOT NULL DEFAULT 50.00,\n  withdrawal_commission_percent DECIMAL(5,2) NOT NULL DEFAULT 10.00,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),\n  updated_by INT NULL,\n  CONSTRAINT withdrawal_minimum_positive CHECK (withdrawal_minimum > 0),\n  CONSTRAINT commission_valid CHECK (withdrawal_commission_percent >= 0 AND withdrawal_commission_percent <= 100)\n);\n\nINSERT INTO financial_settings (id, withdrawals_enabled, withdrawal_minimum, withdrawal_commission_percent)\nSELECT UUID(), FALSE, 50.00, 10.00\nWHERE NOT EXISTS (SELECT 1 FROM financial_settings LIMIT 1);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 573
+}

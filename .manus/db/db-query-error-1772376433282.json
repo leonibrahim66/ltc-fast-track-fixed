@@ -1,0 +1,8 @@
+{
+  "query": "\nSELECT 'financial_settings' AS tbl, withdrawals_enabled, withdrawal_minimum, withdrawal_commission_percent AS commission_pct FROM financial_settings LIMIT 1\nUNION ALL\nSELECT 'withdrawal_config', withdrawals_enabled, minimum_amount, commission_percentage FROM withdrawal_config LIMIT 1;\n\nSELECT 'platform_wallet' AS tbl, total_commissions, available_balance, settled_amount, pending_settlement FROM platform_wallet LIMIT 1;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nSELECT 'financial_settings' AS tbl, withdrawals_enabled, withdrawal_minimum, withdrawal_commission_percent AS commission_pct FROM financial_settings LIMIT 1\nUNION ALL\nSELECT 'withdrawal_config', withdrawals_enabled, minimum_amount, commission_percentage FROM withdrawal_config LIMIT 1;\n\nSELECT 'platform_wallet' AS tbl, total_commissions, available_balance, settled_amount, pending_settlement FROM platform_wallet LIMIT 1;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1221 (HY000) at line 2: Incorrect usage of UNION and LIMIT"
+  ]
+}

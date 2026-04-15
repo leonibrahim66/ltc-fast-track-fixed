@@ -1,0 +1,20 @@
+CREATE TABLE `withdrawal_requests` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`providerId` int NOT NULL,
+	`providerRole` enum('zone_manager','carrier_driver') NOT NULL,
+	`amount` decimal(12,2) NOT NULL,
+	`withdrawalMethod` enum('mtn_momo','airtel_money','zamtel_money','bank_transfer') NOT NULL,
+	`accountNumber` varchar(64) NOT NULL,
+	`accountName` varchar(255),
+	`status` enum('pending','approved','rejected','completed','failed') NOT NULL DEFAULT 'pending',
+	`reviewedBy` varchar(128),
+	`reviewedAt` timestamp,
+	`adminNotes` text,
+	`withdrawalReference` varchar(128),
+	`mtnDisbursementAccepted` boolean DEFAULT false,
+	`requestedAt` timestamp NOT NULL DEFAULT (now()),
+	`completedAt` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `withdrawal_requests_id` PRIMARY KEY(`id`)
+);

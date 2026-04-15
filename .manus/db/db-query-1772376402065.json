@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS platform_wallet (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  total_commissions DECIMAL(15,2) NOT NULL DEFAULT 0,\n  available_balance DECIMAL(15,2) NOT NULL DEFAULT 0,\n  settled_amount DECIMAL(15,2) NOT NULL DEFAULT 0,\n  pending_settlement DECIMAL(15,2) NOT NULL DEFAULT 0,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW()\n);\n\nINSERT INTO platform_wallet (id, total_commissions, available_balance, settled_amount, pending_settlement)\nSELECT UUID(), 0, 0, 0, 0\nWHERE NOT EXISTS (SELECT 1 FROM platform_wallet LIMIT 1);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nCREATE TABLE IF NOT EXISTS platform_wallet (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  total_commissions DECIMAL(15,2) NOT NULL DEFAULT 0,\n  available_balance DECIMAL(15,2) NOT NULL DEFAULT 0,\n  settled_amount DECIMAL(15,2) NOT NULL DEFAULT 0,\n  pending_settlement DECIMAL(15,2) NOT NULL DEFAULT 0,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW()\n);\n\nINSERT INTO platform_wallet (id, total_commissions, available_balance, settled_amount, pending_settlement)\nSELECT UUID(), 0, 0, 0, 0\nWHERE NOT EXISTS (SELECT 1 FROM platform_wallet LIMIT 1);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 613
+}

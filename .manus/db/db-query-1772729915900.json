@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `driver_status` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `driverId` varchar(128) NOT NULL,\n  `driverName` varchar(255),\n  `zoneId` varchar(128),\n  `latitude` decimal(10,8) NOT NULL,\n  `longitude` decimal(11,8) NOT NULL,\n  `isOnline` boolean NOT NULL DEFAULT false,\n  `activePickupId` varchar(128),\n  `headingDegrees` decimal(6,2),\n  `speedKmh` decimal(6,2),\n  `lastUpdated` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `driver_status_id` PRIMARY KEY(`id`),\n  UNIQUE KEY `driver_status_driverId_unique` (`driverId`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute CREATE TABLE IF NOT EXISTS `driver_status` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `driverId` varchar(128) NOT NULL,\n  `driverName` varchar(255),\n  `zoneId` varchar(128),\n  `latitude` decimal(10,8) NOT NULL,\n  `longitude` decimal(11,8) NOT NULL,\n  `isOnline` boolean NOT NULL DEFAULT false,\n  `activePickupId` varchar(128),\n  `headingDegrees` decimal(6,2),\n  `speedKmh` decimal(6,2),\n  `lastUpdated` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `driver_status_id` PRIMARY KEY(`id`),\n  UNIQUE KEY `driver_status_driverId_unique` (`driverId`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 990
+}

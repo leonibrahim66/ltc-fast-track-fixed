@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: ltc-fast-track-api
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      # Database
+      - key: DATABASE_URL
+        sync: false
+      # Supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # MTN MoMo
+      - key: MTN_MOMO_SUBSCRIPTION_KEY
+        sync: false
+      - key: MTN_MOMO_USER_ID
+        sync: false
+      - key: MTN_MOMO_API_KEY
+        sync: false
+      - key: MTN_WEBHOOK_SECRET
+        sync: false
+      # PawaPay
+      - key: PAWAPAY_API_TOKEN
+        sync: false
+      - key: PAWAPAY_ENVIRONMENT
+        value: production
+      # Airtel Money
+      - key: AIRTEL_CLIENT_ID
+        sync: false
+      - key: AIRTEL_CLIENT_SECRET
+        sync: false

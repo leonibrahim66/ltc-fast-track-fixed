@@ -1,0 +1,38 @@
+{
+  "query": "\nSELECT table_name, table_rows\nFROM information_schema.tables\nWHERE table_schema = DATABASE()\n  AND table_name IN (\n    'user_wallets',\n    'withdrawals',\n    'wallet_ledger',\n    'platform_wallet',\n    'withdrawal_settlements',\n    'financial_settings',\n    'withdrawal_config'\n  )\nORDER BY table_name;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nSELECT table_name, table_rows\nFROM information_schema.tables\nWHERE table_schema = DATABASE()\n  AND table_name IN (\n    'user_wallets',\n    'withdrawals',\n    'wallet_ledger',\n    'platform_wallet',\n    'withdrawal_settlements',\n    'financial_settings',\n    'withdrawal_config'\n  )\nORDER BY table_name;\n",
+  "rows": [
+    {
+      "table_name": "financial_settings",
+      "table_rows": "0"
+    },
+    {
+      "table_name": "platform_wallet",
+      "table_rows": "0"
+    },
+    {
+      "table_name": "user_wallets",
+      "table_rows": "0"
+    },
+    {
+      "table_name": "wallet_ledger",
+      "table_rows": "0"
+    },
+    {
+      "table_name": "withdrawal_config",
+      "table_rows": "0"
+    },
+    {
+      "table_name": "withdrawal_settlements",
+      "table_rows": "0"
+    },
+    {
+      "table_name": "withdrawals",
+      "table_rows": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "table_name\ttable_rows\nfinancial_settings\t0\nplatform_wallet\t0\nuser_wallets\t0\nwallet_ledger\t0\nwithdrawal_config\t0\nwithdrawal_settlements\t0\nwithdrawals\t0\n",
+  "stderr": "",
+  "execution_time_ms": 364
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "31277729846",
+    "project_id": "ltc-firebase-key",
+    "storage_bucket": "ltc-firebase-key.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:31277729846:android:963f6a38d0c731c9323097",
+        "android_client_info": {
+          "package_name": "space.manus.ltc.fast.track.t20260301084410"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAX5l-TG9sFQoyqDdXxf7jPwGOfTXS5r8E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS withdrawal_config (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  withdrawals_enabled BOOLEAN NOT NULL DEFAULT TRUE,\n  minimum_amount DECIMAL(15,2) NOT NULL DEFAULT 50.00,\n  maximum_amount DECIMAL(15,2) NOT NULL DEFAULT 10000.00,\n  commission_percentage DECIMAL(5,2) NOT NULL DEFAULT 10.00,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),\n  updated_by INT NULL,\n  CONSTRAINT minimum_less_than_maximum CHECK (minimum_amount < maximum_amount),\n  CONSTRAINT commission_valid CHECK (commission_percentage >= 0 AND commission_percentage <= 100)\n);\n\nINSERT INTO withdrawal_config (id, withdrawals_enabled, minimum_amount, maximum_amount, commission_percentage)\nSELECT UUID(), TRUE, 50.00, 10000.00, 10.00\nWHERE NOT EXISTS (SELECT 1 FROM withdrawal_config LIMIT 1);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nCREATE TABLE IF NOT EXISTS withdrawal_config (\n  id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),\n  withdrawals_enabled BOOLEAN NOT NULL DEFAULT TRUE,\n  minimum_amount DECIMAL(15,2) NOT NULL DEFAULT 50.00,\n  maximum_amount DECIMAL(15,2) NOT NULL DEFAULT 10000.00,\n  commission_percentage DECIMAL(5,2) NOT NULL DEFAULT 10.00,\n  updated_at TIMESTAMP DEFAULT NOW() ON UPDATE NOW(),\n  updated_by INT NULL,\n  CONSTRAINT minimum_less_than_maximum CHECK (minimum_amount < maximum_amount),\n  CONSTRAINT commission_valid CHECK (commission_percentage >= 0 AND commission_percentage <= 100)\n);\n\nINSERT INTO withdrawal_config (id, withdrawals_enabled, minimum_amount, maximum_amount, commission_percentage)\nSELECT UUID(), TRUE, 50.00, 10000.00, 10.00\nWHERE NOT EXISTS (SELECT 1 FROM withdrawal_config LIMIT 1);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 618
+}

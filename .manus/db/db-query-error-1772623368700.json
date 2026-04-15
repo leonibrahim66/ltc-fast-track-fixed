@@ -1,0 +1,8 @@
+{
+  "query": "\nALTER TABLE payment_transactions\n  ADD COLUMN IF NOT EXISTS commissionAmount DECIMAL(12,2) NULL AFTER providerAmount,\n  ADD COLUMN IF NOT EXISTS platformAmount DECIMAL(12,2) NULL AFTER commissionAmount,\n  ADD COLUMN IF NOT EXISTS transactionSource ENUM('garbage','carrier','subscription') NULL AFTER platformAmount,\n  ADD COLUMN IF NOT EXISTS appliedCommissionRate DECIMAL(5,4) NULL AFTER transactionSource;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2QhtR3vkBoFkFzg.bea0b6e60b41 --database 8pdnKAMC4AMrGe9CxvLDut --execute \nALTER TABLE payment_transactions\n  ADD COLUMN IF NOT EXISTS commissionAmount DECIMAL(12,2) NULL AFTER providerAmount,\n  ADD COLUMN IF NOT EXISTS platformAmount DECIMAL(12,2) NULL AFTER commissionAmount,\n  ADD COLUMN IF NOT EXISTS transactionSource ENUM('garbage','carrier','subscription') NULL AFTER platformAmount,\n  ADD COLUMN IF NOT EXISTS appliedCommissionRate DECIMAL(5,4) NULL AFTER transactionSource;\n",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 2: Unknown column 'commissionamount' in 'payment_transactions'"
+  ]
+}
