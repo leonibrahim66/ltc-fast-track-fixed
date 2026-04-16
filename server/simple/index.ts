@@ -172,6 +172,11 @@ for (const col of [
 ]) {
   try { db.exec(col); } catch (_) { /* column already exists */ }
 }
+try {
+  db.exec("ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'deposit'");
+} catch (_) {
+  // already exists
+}
 
 // ─── TypeScript Interfaces ────────────────────────────────────────────────────
 
