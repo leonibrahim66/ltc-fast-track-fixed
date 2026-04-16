@@ -726,7 +726,6 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
       },
       amount: String(Number(amount).toFixed(2)),
       currency,
-      statementDescription: "LTC Fast Track",
       clientReferenceId: user.id,
       customerMessage: "LTC Fast Track payment",
     });
