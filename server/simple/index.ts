@@ -770,11 +770,26 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
       },
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Internal server error";
-    log("ERROR", "Deposit error", { error: msg });
-    return res.status(500).json({ success: false, message: msg, errorCode: "INTERNAL_ERROR" });
+  } catch (error: any) {
+  let msg = "Internal server error";
+  let details: any = null;
+
+  if (axios.isAxiosError(error)) {
+    msg = error.message;
+    details = error.response?.data;
+  } else if (error instanceof Error) {
+    msg = error.message;
   }
+
+  log("ERROR", "Deposit error", { msg, details });
+
+  return res.status(500).json({
+    success: false,
+    message: msg,
+    errorCode: "PAWAPAY_ERROR",
+    details, // 👈 THIS IS THE IMPORTANT PART
+  });
+ }
 });
 
 // ─── Payments — Deposit Status ────────────────────────────────────────────────
