@@ -729,7 +729,6 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
       statementDescription: "LTC Fast Track",
       clientReferenceId: user.id,
       customerMessage: "LTC Fast Track payment",
-      callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
     });
 
     log("PAYMENT", "PawaPay deposit response", {
@@ -871,53 +870,114 @@ app.post("/api/payments/pawapay/callback", (req: Request, res: Response) => {
         ? (JSON.parse(req.body.toString()) as Record<string, unknown>)
         : (req.body as Record<string, unknown>);
 
-    log("CALLBACK", "PawaPay deposit callback received", {
-      depositId: payload["depositId"],
-      status: payload["status"],
-      amount: payload["amount"],
+    // ✅ Support ALL PawaPay IDs
+    const depositId = payload["depositId"];
+    const payoutId = payload["payoutId"];
+    const refundId = payload["refundId"]; // future-proof
+
+    const referenceId = depositId || payoutId || refundId;
+    const status = payload["status"];
+    const amount = payload["amount"];
+
+    log("CALLBACK", "PawaPay callback received", {
+      referenceId,
+      type: depositId ? "deposit" : payoutId ? "payout" : "refund",
+      status,
+      amount,
     });
 
-    const { depositId, status, amount } = payload as {
-      depositId?: string;
-      status?: string;
-      amount?: string | number;
-    };
-
-    if (!depositId || !status) {
-      log("CALLBACK", "Callback missing depositId or status", { payload });
-      return res.status(400).json({ success: false, message: "Missing depositId or status" });
+    // ✅ Validate
+    if (!referenceId || !status) {
+      log("CALLBACK", "Missing referenceId or status", { payload });
+      return res.status(400).json({
+        success: false,
+        message: "Missing referenceId or status",
+      });
     }
 
-    const transaction = getTransactionByDepositId(depositId);
+    // ✅ Fetch transaction
+    const transaction = getTransactionByDepositId(referenceId);
+
     if (!transaction) {
-      log("CALLBACK", "Callback for unknown depositId — acknowledged", { depositId });
+      log("CALLBACK", "Unknown transaction — acknowledged", { referenceId });
       return res.json({
         success: true,
-        data: { received: true, depositId },
+        data: { received: true, referenceId },
         timestamp: new Date().toISOString(),
       });
     }
 
-    if (status === "COMPLETED") {
-      updateTransactionStatus(depositId, "completed");
-      updateWalletBalance(transaction.userId, Number(amount ?? transaction.amount));
-      log("CALLBACK", "Deposit COMPLETED — wallet credited", {
-        depositId,
-        userId: transaction.userId,
-        amount: Number(amount ?? transaction.amount),
+    // ✅ Prevent double-processing (VERY IMPORTANT)
+    if (transaction.status === "completed" || transaction.status === "failed") {
+      return res.json({
+        success: true,
+        data: { received: true, referenceId },
+        timestamp: new Date().toISOString(),
       });
-    } else if (status === "FAILED") {
-      updateTransactionStatus(depositId, "failed");
-      log("CALLBACK", "Deposit FAILED", { depositId, userId: transaction.userId });
-    } else {
-      log("CALLBACK", `Deposit intermediate status: ${status}`, { depositId });
+    }
+
+    // ✅ HANDLE COMPLETED
+    if (status === "COMPLETED") {
+      if (transaction.type === "deposit") {
+        // ➕ Credit wallet
+        updateWalletBalance(
+          transaction.userId,
+          Number(amount ?? transaction.amount)
+        );
+
+        log("CALLBACK", "Deposit COMPLETED — wallet credited", {
+          referenceId,
+          userId: transaction.userId,
+          amount: Number(amount ?? transaction.amount),
+        });
+      }
+
+      if (transaction.type === "withdrawal") {
+        // ❌ Do nothing (already deducted earlier)
+        log("CALLBACK", "Withdrawal COMPLETED", {
+          referenceId,
+          userId: transaction.userId,
+        });
+      }
+
+      updateTransactionStatus(referenceId, "completed");
+    }
+
+    // ✅ HANDLE FAILED
+    else if (status === "FAILED") {
+      if (transaction.type === "withdrawal") {
+        // 🔥 Refund wallet
+        updateWalletBalance(
+          transaction.userId,
+          Math.abs(transaction.amount)
+        );
+
+        log("CALLBACK", "Withdrawal FAILED — wallet refunded", {
+          referenceId,
+          userId: transaction.userId,
+          amount: Math.abs(transaction.amount),
+        });
+      }
+
+      updateTransactionStatus(referenceId, "failed");
+
+      log("CALLBACK", "Transaction FAILED", {
+        referenceId,
+        userId: transaction.userId,
+      });
+    }
+
+    // ✅ OTHER STATES
+    else {
+      log("CALLBACK", `Intermediate status: ${status}`, { referenceId });
     }
 
     return res.json({
       success: true,
-      data: { received: true, depositId },
+      data: { received: true, referenceId },
       timestamp: new Date().toISOString(),
     });
+
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Callback processing error";
     log("ERROR", "Callback error", { error: msg });
@@ -1148,7 +1208,6 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
       },
       statementDescription: "LTC Fast Track withdrawal",
       clientReferenceId: userId,
-      callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
     });
 
     log("WITHDRAWAL", "PawaPay payout response", {
