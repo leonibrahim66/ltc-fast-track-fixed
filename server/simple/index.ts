@@ -833,38 +833,40 @@ app.get("/api/payments/:depositId/status", async (req: Request, res: Response) =
 
     let liveStatus: string | undefined;
 
-    if (verify) {
-      log("PAYMENT", "Verifying deposit status with PawaPay", { depositId });
+   if (verify) {
+  const liveData = await fetchPawaPayDepositStatus(depositId);
 
-      const liveData = await fetchPawaPayDepositStatus(depositId);
-      log("VERIFY", "PawaPay response", { liveData });
+  if (liveData) {
+    liveStatus = liveData.status;
 
-      if (liveData) {
-        liveStatus = liveData.status;
+    if (liveData.status === "COMPLETED") {
+      updateTransactionStatus(depositId, "completed");
+      updateWalletBalance(transaction.userId, transaction.amount);
 
-        if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
-          updateTransactionStatus(depositId, "completed");
-          updateWalletBalance(transaction.userId, transaction.amount);
+    } else if (liveData.status === "FAILED") {
+      updateTransactionStatus(depositId, "failed");
 
-          log("PAYMENT", "Deposit synced to COMPLETED via verify", { depositId });
+    } else if (liveData.status === "ACCEPTED") {
+      const createdAt = new Date(transaction.createdAt).getTime();
+      const now = Date.now();
 
-        } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
-          updateTransactionStatus(depositId, "failed");
-
-          log("PAYMENT", "Deposit synced to FAILED via verify", { depositId });
-
-        } else if (liveData.status === "ACCEPTED") {
-          const createdAt = new Date(transaction.createdAt).getTime();
-          const now = Date.now();
-
-          if (now - createdAt > 2 * 60 * 1000) {
-            updateTransactionStatus(depositId, "failed");
-
-            log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
-          }
-        }
+      // 🔥 IMPORTANT: shorter timeout for testing (30–60 sec)
+      if (now - createdAt > 60 * 1000) {
+        updateTransactionStatus(depositId, "failed");
       }
     }
+
+  } else {
+    // 🔥 fallback if PawaPay gives nothing
+    const createdAt = new Date(transaction.createdAt).getTime();
+    const now = Date.now();
+
+    if (now - createdAt > 60 * 1000) {
+      updateTransactionStatus(depositId, "failed");
+      log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
+    }
+  }
+}
 
     // ✅ Re-fetch after possible update
     const updated = getTransactionByDepositId(depositId) ?? transaction;
