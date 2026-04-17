@@ -405,15 +405,15 @@ function detectTanzaniaNetwork(rawPhone: string): string {
 
   const prefix3 = phone.substring(0, 3);
   // Vodacom: 074, 075, 076
-  if (prefix3 === "074" || prefix3 === "075" || prefix3 === "076") return "VODACOM_TZA";
+  if (prefix3 === "074" || prefix3 === "075" || prefix3 === "076") return "VODACOM_TZ";
   // Airtel: 078
-  if (prefix3 === "078") return "AIRTEL_OAPI_TZA";
+  if (prefix3 === "078") return "AIRTEL_TZ";
   // Tigo: 071, 065
-  if (prefix3 === "071" || prefix3 === "065") return "TIGO_TZA";
+  if (prefix3 === "071" || prefix3 === "065") return "TIGO_TZ";
   // Halotel: 062
-  if (prefix3 === "062") return "HALOTEL_TZA";
+  if (prefix3 === "062") return "HALOTEL_TZ";
 
-  return "VODACOM_TZA";
+  return "VODACOM_TZ";
 }
 
 /**
@@ -428,7 +428,7 @@ function detectNetwork(countryCode: string, rawPhone: string): string {
 /**
  * Normalise phone number to E.164 format for PawaPay.
  * Zambia: 0971234567 → 260971234567
- * Tanzania: 0741234567 → 255741234567
+ * Tanzania: 0741234567 → 2550741234567
  */
 function toE164(countryCode: string, rawPhone: string): string {
   const phone = rawPhone.replace(/\s+/g, "").replace(/^\+/, "");
@@ -837,32 +837,31 @@ app.get("/api/payments/:depositId/status", async (req: Request, res: Response) =
       log("PAYMENT", "Verifying deposit status with PawaPay", { depositId });
       const liveData = await fetchPawaPayDepositStatus(depositId);
       log("VERIFY", "PawaPay response", { liveData });
-    if (liveData) {
-      liveStatus = liveData.status;
+   if (liveData) {
+     liveStatus = liveData.status;
 
-      // ✅ Auto-expire if stuck on ACCEPTED (user didn't enter PIN)
-      if (liveData.status === "ACCEPTED") {
-         const createdAt = new Date(transaction.createdAt).getTime();
-         const now = Date.now();
-
-        if (now - createdAt > 2 * 60 * 1000) {
-          updateTransactionStatus(depositId, "failed");
-          log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
-        }
-      }
-
-    // ✅ Normal sync logic
      if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
        updateTransactionStatus(depositId, "completed");
        updateWalletBalance(transaction.userId, transaction.amount);
+
        log("PAYMENT", "Deposit synced to COMPLETED via verify", { depositId });
 
-    } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
-      updateTransactionStatus(depositId, "failed");
+     } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
+       updateTransactionStatus(depositId, "failed");
+
       log("PAYMENT", "Deposit synced to FAILED via verify", { depositId });
+
+    } else if (liveData.status === "ACCEPTED") {
+      const createdAt = new Date(transaction.createdAt).getTime();
+      const now = Date.now();
+
+      if (now - createdAt > 2 * 60 * 1000) {
+        updateTransactionStatus(depositId, "failed");
+
+        log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
+      }
     }
   }
-}
 
     // Re-fetch after potential sync
     const updated = getTransactionByDepositId(depositId) ?? transaction;
