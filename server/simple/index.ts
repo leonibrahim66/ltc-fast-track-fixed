@@ -546,13 +546,17 @@ async function fetchPawaPayDepositStatus(
   depositId: string
 ): Promise<PawaPayDepositStatusResponse | null> {
   try {
-    const response = await axios.get<PawaPayDepositStatusResponse[]>(
-      `${PAWAPAY_BASE_URL}/v2/deposits?depositId=${encodeURIComponent(depositId)}`,
-      { headers: pawaPayHeaders(), timeout: 15_000 }
+    const response = await axios.get<PawaPayDepositStatusResponse>(
+      `${PAWAPAY_BASE_URL}/v1/deposits/${depositId}`,
+      {
+        headers: pawaPayHeaders(),
+        timeout: 15000,
+      }
     );
-    const results = response.data;
-    return Array.isArray(results) && results.length > 0 ? results[0] : null;
-  } catch {
+
+    return response.data;
+  } catch (error: any) {
+    console.error("PawaPay fetch error:", error.response?.data || error.message);
     return null;
   }
 }
@@ -832,19 +836,33 @@ app.get("/api/payments/:depositId/status", async (req: Request, res: Response) =
     if (verify) {
       log("PAYMENT", "Verifying deposit status with PawaPay", { depositId });
       const liveData = await fetchPawaPayDepositStatus(depositId);
-      if (liveData) {
-        liveStatus = liveData.status;
-        // Sync DB if PawaPay reports a terminal state
-        if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
-          updateTransactionStatus(depositId, "completed");
-          updateWalletBalance(transaction.userId, transaction.amount);
-          log("PAYMENT", "Deposit synced to COMPLETED via verify", { depositId });
-        } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
+      log("VERIFY", "PawaPay response", { liveData });
+    if (liveData) {
+      liveStatus = liveData.status;
+
+      // ✅ Auto-expire if stuck on ACCEPTED (user didn't enter PIN)
+      if (liveData.status === "ACCEPTED") {
+         const createdAt = new Date(transaction.createdAt).getTime();
+         const now = Date.now();
+
+        if (now - createdAt > 2 * 60 * 1000) {
           updateTransactionStatus(depositId, "failed");
-          log("PAYMENT", "Deposit synced to FAILED via verify", { depositId });
+          log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
         }
       }
+
+    // ✅ Normal sync logic
+     if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
+       updateTransactionStatus(depositId, "completed");
+       updateWalletBalance(transaction.userId, transaction.amount);
+       log("PAYMENT", "Deposit synced to COMPLETED via verify", { depositId });
+
+    } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
+      updateTransactionStatus(depositId, "failed");
+      log("PAYMENT", "Deposit synced to FAILED via verify", { depositId });
     }
+  }
+}
 
     // Re-fetch after potential sync
     const updated = getTransactionByDepositId(depositId) ?? transaction;
