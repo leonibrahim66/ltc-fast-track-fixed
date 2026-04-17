@@ -76,6 +76,7 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const DB_PATH = path.join(DATA_DIR, "ltc-fast-track.db");
+fs.rmSync(DB_PATH, { force: true });
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
@@ -161,22 +162,33 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_pickups_status          ON pickups(status);
 `);
 
-// ─── Migrate existing users table (idempotent ALTER TABLE) ────────────────────
-// SQLite does not support IF NOT EXISTS for columns; wrap each in try/catch.
+// ─── Migrate existing users table ─────────────────────────────
 for (const col of [
-  "ALTER TABLE users ADD COLUMN country     TEXT NOT NULL DEFAULT 'ZMB'",
-  "ALTER TABLE users ADD COLUMN province    TEXT",
-  "ALTER TABLE users ADD COLUMN city        TEXT",
-  "ALTER TABLE users ADD COLUMN town        TEXT",
+  "ALTER TABLE users ADD COLUMN country TEXT NOT NULL DEFAULT 'ZMB'",
+  "ALTER TABLE users ADD COLUMN province TEXT",
+  "ALTER TABLE users ADD COLUMN city TEXT",
+  "ALTER TABLE users ADD COLUMN town TEXT",
   "ALTER TABLE users ADD COLUMN fullAddress TEXT",
 ]) {
-  try { db.exec(col); } catch (_) { /* column already exists */ }
+  try { db.exec(col); } catch (_) {}
 }
+
+// ─── Migrate transactions table ─────────────────────────────
+
+// add provider column
+try {
+  db.exec("ALTER TABLE transactions ADD COLUMN provider TEXT");
+} catch (_) {}
+
+// add phoneNumber column
+try {
+  db.exec("ALTER TABLE transactions ADD COLUMN phoneNumber TEXT");
+} catch (_) {}
+
+// add type column
 try {
   db.exec("ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'deposit'");
-} catch (_) {
-  // already exists
-}
+} catch (_) {}
 
 // ─── TypeScript Interfaces ────────────────────────────────────────────────────
 
