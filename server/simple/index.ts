@@ -835,35 +835,38 @@ app.get("/api/payments/:depositId/status", async (req: Request, res: Response) =
 
     if (verify) {
       log("PAYMENT", "Verifying deposit status with PawaPay", { depositId });
+
       const liveData = await fetchPawaPayDepositStatus(depositId);
       log("VERIFY", "PawaPay response", { liveData });
-   if (liveData) {
-     liveStatus = liveData.status;
 
-     if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
-       updateTransactionStatus(depositId, "completed");
-       updateWalletBalance(transaction.userId, transaction.amount);
+      if (liveData) {
+        liveStatus = liveData.status;
 
-       log("PAYMENT", "Deposit synced to COMPLETED via verify", { depositId });
+        if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
+          updateTransactionStatus(depositId, "completed");
+          updateWalletBalance(transaction.userId, transaction.amount);
 
-     } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
-       updateTransactionStatus(depositId, "failed");
+          log("PAYMENT", "Deposit synced to COMPLETED via verify", { depositId });
 
-      log("PAYMENT", "Deposit synced to FAILED via verify", { depositId });
+        } else if (liveData.status === "FAILED" && transaction.status !== "failed") {
+          updateTransactionStatus(depositId, "failed");
 
-    } else if (liveData.status === "ACCEPTED") {
-      const createdAt = new Date(transaction.createdAt).getTime();
-      const now = Date.now();
+          log("PAYMENT", "Deposit synced to FAILED via verify", { depositId });
 
-      if (now - createdAt > 2 * 60 * 1000) {
-        updateTransactionStatus(depositId, "failed");
+        } else if (liveData.status === "ACCEPTED") {
+          const createdAt = new Date(transaction.createdAt).getTime();
+          const now = Date.now();
 
-        log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
+          if (now - createdAt > 2 * 60 * 1000) {
+            updateTransactionStatus(depositId, "failed");
+
+            log("PAYMENT", "Deposit auto-expired (no PIN entered)", { depositId });
+          }
+        }
       }
     }
-  }
 
-    // Re-fetch after potential sync
+    // ✅ Re-fetch after possible update
     const updated = getTransactionByDepositId(depositId) ?? transaction;
 
     return res.json({
@@ -882,10 +885,17 @@ app.get("/api/payments/:depositId/status", async (req: Request, res: Response) =
       },
       timestamp: new Date().toISOString(),
     });
+
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Internal server error";
+
     log("ERROR", "Deposit status error", { error: msg });
-    return res.status(500).json({ success: false, message: msg, errorCode: "INTERNAL_ERROR" });
+
+    return res.status(500).json({
+      success: false,
+      message: msg,
+      errorCode: "INTERNAL_ERROR",
+    });
   }
 });
 
