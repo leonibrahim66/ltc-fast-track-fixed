@@ -1306,12 +1306,15 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
       },
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Internal server error";
-    log("ERROR", "Withdrawal error — wallet NOT deducted", { error: msg, userId });
-    return res.status(500).json({ success: false, message: msg, errorCode: "INTERNAL_ERROR" });
-  }
-});
+  } catch (error: any) {
+  console.error("PawaPay FULL ERROR:", error.response?.data || error.message);
+
+  return res.status(500).json({
+    success: false,
+    message: error.response?.data || error.message,
+    errorCode: "INTERNAL_ERROR",
+  });
+}
 
 // ─── Pickups ──────────────────────────────────────────────────────────────────
 
