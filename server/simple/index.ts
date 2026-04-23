@@ -1307,15 +1307,22 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-  console.error("PawaPay FULL ERROR:", error.response?.data || error.message);
+    console.error("PawaPay FULL ERROR:", error.response?.data || error.message);
 
-  if (axios.isAxiosError(error)) {
-  return res.status(400).json({
-    success: false,
-    message: "PawaPay error",
-    details: error.response?.data,
-  });
-}
+    if (axios.isAxiosError(error)) {
+      return res.status(400).json({
+        success: false,
+        message: "PawaPay error",
+        details: error.response?.data,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
 
 // ─── Pickups ──────────────────────────────────────────────────────────────────
 
