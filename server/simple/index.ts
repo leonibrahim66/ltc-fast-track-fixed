@@ -1309,12 +1309,13 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
   } catch (error: any) {
   console.error("PawaPay FULL ERROR:", error.response?.data || error.message);
 
-  return res.status(500).json({
+  if (axios.isAxiosError(error)) {
+  return res.status(400).json({
     success: false,
-    message: error.response?.data || error.message,
-    errorCode: "INTERNAL_ERROR",});
-  }
-});
+    message: "PawaPay error",
+    details: error.response?.data,
+  });
+}
 
 // ─── Pickups ──────────────────────────────────────────────────────────────────
 

@@ -1,48 +1,46 @@
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, and } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
+// ✅ CREATE POOL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false }
+    : false,
+  max: 10,                // max connections
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+
+// ✅ ADD THIS RIGHT HERE (directly below pool)
+if (process.env.NODE_ENV !== "production") {
+  pool.connect()
+    .then(client => {
+      console.log("✅ PostgreSQL connected");
+      client.release();
+    })
+    .catch(err => {
+      console.error("❌ PostgreSQL connection failed:", err);
+    });
+}
+
 let _db: ReturnType<typeof drizzle> | null = null;
-let _dbInitFailed = false;  // tracks a permanent config error (no DATABASE_URL)
-let _lastRetryAt = 0;       // timestamp of last failed connection attempt
-const RETRY_INTERVAL_MS = 30_000; // retry DB connection every 30 seconds
 
-/**
- * Lazily create the drizzle instance.
- * - Returns null (not throws) if DATABASE_URL is missing or connection fails.
- * - Retries failed connections every 30 seconds instead of caching null permanently.
- * - Does NOT crash the API — callers must handle null gracefully.
- */
 export async function getDb() {
-  // Already connected
-  if (_db) return _db;
-
-  // No DATABASE_URL configured — permanent failure, don't retry
   if (!process.env.DATABASE_URL) {
-    if (!_dbInitFailed) {
-      console.error("[Database] DATABASE_URL is not set. Database features are disabled.");
-      _dbInitFailed = true;
-    }
+    console.error("DATABASE_URL missing");
     return null;
   }
 
-  // Throttle retry attempts
-  const now = Date.now();
-  if (_lastRetryAt > 0 && now - _lastRetryAt < RETRY_INTERVAL_MS) {
-    return null;
-  }
-
-  try {
-    _lastRetryAt = now;
-    _db = drizzle(process.env.DATABASE_URL);
-    console.log("[Database] Connected successfully.");
-    return _db;
-  } catch (error) {
-    console.error("[Database] Failed to connect:", error instanceof Error ? error.message : error);
-    _db = null;
-    return null;
-  }
+  itry {
+  _db = drizzle(pool);
+  console.log("[Database] Initialized");
+} catch (err) {
+  console.error("[Database] Init failed:", err);
+  return null;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -52,9 +50,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  console.warn("[Database] getUserNotifications skipped — DB unavailable");
+  return [];
+}
 
   try {
     const values: InsertUser = {
@@ -95,9 +93,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    await db.insert(users).values(values).onConflictDoUpdate({
+  target: users.openId,
+  set: updateSet,
+});
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -293,11 +292,15 @@ export async function createUserNotification(data: {
   const db = await getDb();
   if (!db) return null;
   const { userNotifications } = await import("../drizzle/schema");
-  const result = await db.insert(userNotifications).values({
+  const result = await db
+  .insert(userNotifications)
+  .values({
     ...data,
     isRead: false,
-  });
-  return (result as any).insertId as number | undefined;
+  })
+  .returning({ id: userNotifications.id });
+
+   return result[0]?.id;
 }
 
 export async function markUserNotificationRead(id: number) {
@@ -327,3 +330,13 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
     .where(eq(userNotifications.userId, userId));
   return rows.filter((r) => !r.isRead).length;
 }
+
+process.on("SIGTERM", async () => {
+  console.log("Closing DB pool...");
+  await pool.end();
+});
+
+process.on("SIGINT", async () => {
+  console.log("Closing DB pool...");
+  await pool.end();
+});
