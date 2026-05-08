@@ -43,6 +43,13 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
+
+  extra: {
+    eas: {
+      projectId: "4f184c5e-cba4-43a9-a4b1-a45534f65e0f",
+    },
+  },
+
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
@@ -126,7 +133,7 @@ const config: ExpoConfig = {
           minSdkVersion: 24,
           compileSdkVersion: 35,
           targetSdkVersion: 35,
-          kotlinVersion: "2.1.21",
+          kotlinVersion: "1.9.24",
         },
         kotlin: {
           jvmTarget: "17",
