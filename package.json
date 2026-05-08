@@ -79,7 +79,6 @@
     "react-native-svg": "15.11.2",
     "react-native-view-shot": "^4.0.3",
     "react-native-web": "^0.20.0",
-    "react-native-worklets": "0.5.1",
     "superjson": "^1.13.3",
     "tailwind-merge": "^2.6.0",
     "uuid": "^13.0.0",
@@ -104,6 +103,6 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.3",
     "vitest": "^2.1.9"
-  }, 
-    "packageManager": "pnpm@9.12.0"
+  },
+  "packageManager": "pnpm@9.12.0"
 }
