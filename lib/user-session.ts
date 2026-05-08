@@ -110,8 +110,6 @@ export async function getOrCreateBackendUserId(
   }
 ): Promise<string> {
   // 1. Check storage first — avoids creating duplicate users on restart
-  await clearBackendUserId(phone);
-
   const stored = await loadBackendUserId(phone);
   if (stored) {
     return stored;

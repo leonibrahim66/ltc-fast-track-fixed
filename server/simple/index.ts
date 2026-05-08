@@ -70,7 +70,7 @@ function log(level: LogLevel, message: string, meta?: Record<string, unknown>): 
 
 // ─── Database Setup ───────────────────────────────────────────────────────────
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = "/data";
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
