@@ -22,16 +22,28 @@ interface WalletContextType {
   userId: string | null;
   isLoading: boolean;
   error: string | null;
+  transactions: any[];
+  setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
   setWallet: (wallet: WalletData) => void;
   setUserId: (userId: string) => void;
   refreshWallet: (userId: string) => Promise<void>;
   clearError: () => void;
 }
 
+export interface Transaction {
+  id: string;
+  type: "recharge" | "withdrawal" | "referral" | "payment";
+  amount: number;
+  date: string;
+  status: "completed" | "pending" | "failed";
+  description: string;
+}
+
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [wallet, setWallet] = useState<WalletData | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +102,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     userId,
     isLoading,
     error,
+    transactions,
+    setTransactions,
     setWallet,
     setUserId,
     refreshWallet,

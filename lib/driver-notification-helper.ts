@@ -59,7 +59,7 @@ export async function createDriverNotification(
     // On native, use local loopback when no base URL is configured
     const apiBase =
       baseUrl ||
-      (Platform.OS !== "web" ? "http://127.0.0.1:3000" : "");
+      (Platform.OS !== "web" ? "https://ltc-fast-track-fixed-production.up.railway.app/" : "");
 
     const url = `${apiBase}/api/trpc/notifications.create`;
 

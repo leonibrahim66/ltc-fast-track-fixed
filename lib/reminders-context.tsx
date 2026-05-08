@@ -1,12 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { PickupRequest } from "./pickups-context";
 
 interface ReminderSettings {
   enabled: boolean;
-  minutesBefore: number; // Default 60 minutes
+  minutesBefore: number;
 }
 
 interface RemindersContextType {
@@ -28,25 +27,50 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   minutesBefore: 60,
 };
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+function notificationsAvailable(): boolean {
+  return Platform.OS !== "web";
+}
+
+function getNotificationsModule(): any | null {
+  if (!notificationsAvailable()) return null;
+
+  try {
+    return eval('require')("expo-notifications");
+  } catch {
+    return null;
+  }
+}
+
+let notificationHandlerConfigured = false;
+
+function configureNotificationHandler() {
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return;
+  if (notificationHandlerConfigured) return;
+
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+
+    notificationHandlerConfigured = true;
+  } catch {}
+}
 
 export function RemindersProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<ReminderSettings>(DEFAULT_SETTINGS);
   const [scheduledReminders, setScheduledReminders] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load settings and scheduled reminders
   useEffect(() => {
     loadData();
+    configureNotificationHandler();
   }, []);
 
   const loadData = async () => {
@@ -56,14 +80,10 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.getItem(SCHEDULED_REMINDERS_KEY),
       ]);
 
-      if (storedSettings) {
-        setSettings(JSON.parse(storedSettings));
-      }
-      if (storedReminders) {
-        setScheduledReminders(JSON.parse(storedReminders));
-      }
+      if (storedSettings) setSettings(JSON.parse(storedSettings));
+      if (storedReminders) setScheduledReminders(JSON.parse(storedReminders));
     } catch (error) {
-      console.error("Failed to load reminder data:", error);
+      console.error("[Reminders] Failed to load reminder data:", error);
     } finally {
       setIsLoading(false);
     }
@@ -72,33 +92,32 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
   const saveSettings = async (newSettings: ReminderSettings) => {
     try {
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
-    } catch (error) {
-      console.error("Failed to save reminder settings:", error);
-    }
+    } catch {}
   };
 
   const saveScheduledReminders = async (reminders: Record<string, string>) => {
     try {
       await AsyncStorage.setItem(SCHEDULED_REMINDERS_KEY, JSON.stringify(reminders));
-    } catch (error) {
-      console.error("Failed to save scheduled reminders:", error);
-    }
+    } catch {}
   };
 
   const requestPermissions = async (): Promise<boolean> => {
-    if (Platform.OS === "web") {
-      return false; // Web notifications not supported in this context
+    const Notifications = getNotificationsModule();
+    if (!Notifications) return false;
+
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== "granted") {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      return finalStatus === "granted";
+    } catch {
+      return false;
     }
-
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== "granted") {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    return finalStatus === "granted";
   };
 
   const updateSettings = useCallback(async (newSettings: Partial<ReminderSettings>) => {
@@ -108,22 +127,19 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
   }, [settings]);
 
   const getTimeSlotDate = (pickup: PickupRequest): Date | null => {
-    if (!pickup.scheduledDate || !pickup.scheduledTime) {
-      return null;
-    }
+    if (!pickup.scheduledDate || !pickup.scheduledTime) return null;
 
     const date = new Date(pickup.scheduledDate);
-    
-    // Set time based on time slot
+
     switch (pickup.scheduledTime) {
       case "morning":
-        date.setHours(8, 0, 0, 0); // 8:00 AM
+        date.setHours(8, 0, 0, 0);
         break;
       case "afternoon":
-        date.setHours(13, 0, 0, 0); // 1:00 PM
+        date.setHours(13, 0, 0, 0);
         break;
       case "evening":
-        date.setHours(17, 0, 0, 0); // 5:00 PM
+        date.setHours(17, 0, 0, 0);
         break;
       default:
         return null;
@@ -133,38 +149,30 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
   };
 
   const schedulePickupReminder = useCallback(async (pickup: PickupRequest): Promise<string | null> => {
-    if (!settings.enabled || Platform.OS === "web") {
-      return null;
-    }
+    const Notifications = getNotificationsModule();
+    if (!settings.enabled || !Notifications) return null;
 
     const hasPermission = await requestPermissions();
-    if (!hasPermission) {
-      return null;
-    }
+    if (!hasPermission) return null;
 
     const pickupTime = getTimeSlotDate(pickup);
-    if (!pickupTime) {
-      return null;
-    }
+    if (!pickupTime) return null;
 
-    // Calculate reminder time (minutesBefore before pickup)
     const reminderTime = new Date(pickupTime.getTime() - settings.minutesBefore * 60 * 1000);
-    
-    // Don't schedule if reminder time is in the past
-    if (reminderTime <= new Date()) {
-      return null;
-    }
+    if (reminderTime <= new Date()) return null;
 
-    // Cancel existing reminder for this pickup if any
     if (scheduledReminders[pickup.id]) {
-      await Notifications.cancelScheduledNotificationAsync(scheduledReminders[pickup.id]);
+      try {
+        await Notifications.cancelScheduledNotificationAsync(scheduledReminders[pickup.id]);
+      } catch {}
     }
 
-    const timeSlotLabel = pickup.scheduledTime === "morning" 
-      ? "Morning (8AM-12PM)"
-      : pickup.scheduledTime === "afternoon"
-      ? "Afternoon (12PM-5PM)"
-      : "Evening (5PM-8PM)";
+    const timeSlotLabel =
+      pickup.scheduledTime === "morning"
+        ? "Morning (8AM-12PM)"
+        : pickup.scheduledTime === "afternoon"
+        ? "Afternoon (12PM-5PM)"
+        : "Evening (5PM-8PM)";
 
     try {
       const notificationId = await Notifications.scheduleNotificationAsync({
@@ -185,34 +193,35 @@ export function RemindersProvider({ children }: { children: React.ReactNode }) {
       await saveScheduledReminders(updatedReminders);
 
       return notificationId;
-    } catch (error) {
-      console.error("Failed to schedule reminder:", error);
+    } catch {
       return null;
     }
   }, [settings, scheduledReminders]);
 
   const cancelPickupReminder = useCallback(async (pickupId: string) => {
+    const Notifications = getNotificationsModule();
+    if (!Notifications) return;
+
     const notificationId = scheduledReminders[pickupId];
-    if (notificationId) {
-      try {
-        await Notifications.cancelScheduledNotificationAsync(notificationId);
-        const { [pickupId]: _, ...remaining } = scheduledReminders;
-        setScheduledReminders(remaining);
-        await saveScheduledReminders(remaining);
-      } catch (error) {
-        console.error("Failed to cancel reminder:", error);
-      }
-    }
+    if (!notificationId) return;
+
+    try {
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+      const { [pickupId]: _, ...remaining } = scheduledReminders;
+      setScheduledReminders(remaining);
+      await saveScheduledReminders(remaining);
+    } catch {}
   }, [scheduledReminders]);
 
   const cancelAllReminders = useCallback(async () => {
+    const Notifications = getNotificationsModule();
+    if (!Notifications) return;
+
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
       setScheduledReminders({});
       await saveScheduledReminders({});
-    } catch (error) {
-      console.error("Failed to cancel all reminders:", error);
-    }
+    } catch {}
   }, []);
 
   return (

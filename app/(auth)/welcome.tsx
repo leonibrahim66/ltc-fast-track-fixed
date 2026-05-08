@@ -59,8 +59,8 @@ export default function WelcomeScreen() {
   const [swipeCount, setSwipeCount] = useState(0);
   const [adminVisible, setAdminVisible] = useState(false);
   const [showScrollHint, setShowScrollHint] = useState(true);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const hideTimerRef = useRef<any>(null);
+  const scrollRef = useRef<any>(null);
 
   // ── Scroll hint arrow animation ──────────────────────────────────────────
   const arrowOpacity = useSharedValue(1);
@@ -314,7 +314,7 @@ function FeatureItem({
 }: {
   icon: string;
   text: string;
-  rs: ReturnType<typeof import("@/hooks/use-responsive").useResponsive>;
+  rs: any;
   last?: boolean;
 }) {
   return (

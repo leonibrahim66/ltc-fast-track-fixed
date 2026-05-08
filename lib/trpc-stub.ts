@@ -1,19 +1,14 @@
 /**
- * TRPC Stub Module
- *
- * This module provides a compatibility layer for the migration from tRPC to Supabase.
- * All backend API calls should be migrated to use Supabase directly.
- *
- * This is a temporary stub to prevent import errors during refactoring.
- * Remove this file once all tRPC calls have been migrated to Supabase.
+ * Silent tRPC compatibility stub.
+ * Keeps legacy imports alive while all logic runs through Supabase.
+ * No startup warnings. No console noise.
  */
 
 const createMutationStub = () => ({
   mutate: async (..._args: any[]) => {
-    console.warn("tRPC stub: mutation called - migrate to Supabase");
+    return null;
   },
   mutateAsync: async (..._args: any[]) => {
-    console.warn("tRPC stub: mutateAsync called - migrate to Supabase");
     return null;
   },
   isPending: false,
@@ -27,25 +22,24 @@ const createQueryStub = (_params?: any) => ({
   isLoading: false,
   isFetching: false,
   error: null,
-  refetch: async () => {},
+  refetch: async () => null,
 });
 
-// useUtils stub — provides invalidate() no-ops for all known namespaces
 const createUtilsStub = () => ({
   notifications: {
     getAll: {
-      invalidate: async () => {},
-      setData: () => {},
+      invalidate: async () => null,
+      setData: () => null,
     },
   },
   payments: {
     status: {
-      invalidate: async () => {},
+      invalidate: async () => null,
     },
   },
   stats: {
     getDriverStats: {
-      invalidate: async () => {},
+      invalidate: async () => null,
     },
   },
 });
@@ -53,21 +47,25 @@ const createUtilsStub = () => ({
 export const trpc = {
   Provider: ({ children }: any) => children,
   useUtils: createUtilsStub,
+
   drivers: {
     register: {
       useMutation: createMutationStub,
     },
   },
+
   stats: {
     getDriverStats: {
       useQuery: createQueryStub,
     },
   },
+
   zones: {
     getZones: {
       useQuery: createQueryStub,
     },
   },
+
   collector: {
     getZoneDetails: {
       useQuery: createQueryStub,
@@ -79,11 +77,13 @@ export const trpc = {
       useQuery: createQueryStub,
     },
   },
+
   households: {
     getHouseholds: {
       useQuery: createQueryStub,
     },
   },
+
   payments: {
     processPayment: {
       useMutation: createMutationStub,
@@ -95,6 +95,7 @@ export const trpc = {
       useQuery: createQueryStub,
     },
   },
+
   bookings: {
     getBookings: {
       useQuery: createQueryStub,
@@ -103,12 +104,13 @@ export const trpc = {
       useQuery: createQueryStub,
     },
   },
+
   documents: {
     getDocumentStatus: {
       useQuery: createQueryStub,
     },
   },
-  // Notifications router — used by app/notifications.tsx and app/(tabs)/index.tsx
+
   notifications: {
     getAll: {
       useQuery: createQueryStub,
@@ -126,6 +128,5 @@ export const trpc = {
 } as any;
 
 export function createTRPCClient() {
-  console.warn("createTRPCClient stub called - tRPC has been removed");
   return trpc;
 }

@@ -5,7 +5,7 @@
   "main": "index.ts",
   "scripts": {
     "dev": "tsx watch simple/index.ts",
-    "start": "node simple/index.ts",
+    "start": "tsx simple/index.ts",
     "build": "tsc",
     "check": "tsc --noEmit"
   },

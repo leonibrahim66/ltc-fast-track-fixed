@@ -1,21 +1,3 @@
-/**
- * lib/global-notification-context.tsx
- *
- * Global real-time notification system for LTC Fast Track.
- *
- * Architecture:
- * - Reads from Supabase `user_notifications` table directly (NOT the tRPC stub)
- * - Subscribes to Supabase Realtime for instant INSERT/UPDATE events
- * - Falls back to 15-second polling when Realtime is unavailable
- * - Exposes unreadCount for bell badge across all role dashboards
- * - Queues in-app banner toasts for new notifications
- * - Works for all user roles: customer, driver, zone manager, admin
- *
- * Why Supabase directly (not tRPC):
- * - The tRPC layer is a stub that always returns null — it was never connected
- * - Supabase is the actual database; all writes go there via sendNotification()
- * - Supabase Realtime gives sub-second push updates without polling
- */
 import React, {
   createContext,
   useCallback,
@@ -28,7 +10,6 @@ import { AppState, AppStateStatus } from "react-native";
 import { useAuth } from "@/lib/auth-context";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 export type GlobalNotifType =
   | "pickup_update"
   | "driver_accepted"
@@ -44,7 +25,6 @@ export interface GlobalNotification {
   userId: string;
   type: GlobalNotifType;
   title: string;
-  /** The notification body/message */
   body: string;
   isRead: boolean;
   data?: Record<string, unknown> | null;
@@ -70,16 +50,12 @@ interface GlobalNotificationContextType {
   refresh: () => Promise<void>;
 }
 
-// ─── Context ──────────────────────────────────────────────────────────────────
-const GlobalNotificationContext = createContext<
-  GlobalNotificationContextType | undefined
->(undefined);
+const GlobalNotificationContext =
+  createContext<GlobalNotificationContextType | undefined>(undefined);
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 15000;
 const MAX_NOTIFICATIONS = 100;
 
-// ─── Row shape from Supabase ──────────────────────────────────────────────────
 interface SupabaseNotifRow {
   id: number;
   user_id: string;
@@ -106,7 +82,6 @@ function rowToNotification(row: SupabaseNotifRow): GlobalNotification {
   };
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
 export function GlobalNotificationProvider({
   children,
 }: {
@@ -119,21 +94,29 @@ export function GlobalNotificationProvider({
   const [isLoading, setIsLoading] = useState(false);
   const [bannerQueue, setBannerQueue] = useState<BannerNotification[]>([]);
 
-  // Track IDs we've already shown a banner for (prevents re-showing on re-fetch)
   const shownBannerIds = useRef<Set<number>>(new Set());
-  // Track the timestamp of the last fetch so we only banner truly new items
   const lastFetchAt = useRef<Date>(new Date());
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const realtimeChannel = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const realtimeChannel = useRef<any>(null);
+  const realtimeConnected = useRef(false);
+  const fetchInFlight = useRef(false);
+  const realtimeFallbackTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ─── Fetch from Supabase ──────────────────────────────────────────────────
+  const stopPolling = () => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  };
+
   const fetchFromSupabase = useCallback(
     async (showBanners = false): Promise<void> => {
+      if (fetchInFlight.current) return;
       if (!userId) return;
-      if (!isSupabaseConfigured()) {
-        console.warn("[GlobalNotif] Supabase not configured — notifications unavailable");
-        return;
-      }
+      if (!isSupabaseConfigured()) return;
+
+      fetchInFlight.current = true;
+
       try {
         const { data, error } = await supabase
           .from("user_notifications")
@@ -142,25 +125,26 @@ export function GlobalNotificationProvider({
           .order("created_at", { ascending: false })
           .limit(MAX_NOTIFICATIONS);
 
-        if (error) {
-          console.warn("[GlobalNotif] Fetch error:", error.message);
-          return;
-        }
+        if (error) return;
 
         const rows = (data ?? []) as SupabaseNotifRow[];
         const mapped = rows.map(rowToNotification);
 
         if (showBanners) {
-          // Show banners for notifications created after the last fetch
           const cutoff = lastFetchAt.current;
+
           for (const n of mapped) {
             if (!n.isRead && !shownBannerIds.current.has(n.id)) {
-              const createdAt = new Date(n.createdAt);
-              if (createdAt > cutoff) {
+              if (new Date(n.createdAt) > cutoff) {
                 shownBannerIds.current.add(n.id);
                 setBannerQueue((prev) => [
                   ...prev,
-                  { id: n.id, type: n.type, title: n.title, body: n.body },
+                  {
+                    id: n.id,
+                    type: n.type,
+                    title: n.title,
+                    body: n.body,
+                  },
                 ]);
               }
             }
@@ -168,36 +152,61 @@ export function GlobalNotificationProvider({
         }
 
         lastFetchAt.current = new Date();
-        setNotifications(mapped);
+
+        setNotifications((prev) => {
+          const same =
+            prev.length === mapped.length &&
+            prev.every(
+              (p, i) =>
+                p.id === mapped[i].id &&
+                p.isRead === mapped[i].isRead &&
+                p.title === mapped[i].title &&
+                p.body === mapped[i].body
+            );
+
+          return same ? prev : mapped;
+        });
       } catch (err) {
-        console.warn("[GlobalNotif] Unexpected error:", err);
+        console.log("[GlobalNotif] fetch failed", err);
+      } finally {
+        fetchInFlight.current = false;
       }
     },
     [userId]
   );
 
-  // ─── Initial load ─────────────────────────────────────────────────────────
+  const startPolling = useCallback(() => {
+    stopPolling();
+
+    pollTimer.current = setInterval(() => {
+      fetchFromSupabase(true);
+    }, POLL_INTERVAL_MS);
+  }, [fetchFromSupabase]);
+
   const loadInitial = useCallback(async () => {
     if (!userId) return;
+
     setIsLoading(true);
-    // Set lastFetchAt to now so we don't banner old notifications on first load
     lastFetchAt.current = new Date();
     await fetchFromSupabase(false);
     setIsLoading(false);
   }, [userId, fetchFromSupabase]);
 
-  // ─── Supabase Realtime subscription ──────────────────────────────────────
   const subscribeRealtime = useCallback(() => {
-    if (!userId || !isSupabaseConfigured()) return;
+    if (!userId || !isSupabaseConfigured()) {
+      startPolling();
+      return;
+    }
 
-    // Clean up any existing channel
     if (realtimeChannel.current) {
       supabase.removeChannel(realtimeChannel.current);
       realtimeChannel.current = null;
     }
 
+    realtimeConnected.current = false;
+
     const channel = supabase
-      .channel(`user_notifications:${userId}`)
+      .channel(`user_notifications_${userId}`)
       .on(
         "postgres_changes" as any,
         {
@@ -207,133 +216,127 @@ export function GlobalNotificationProvider({
           filter: `user_id=eq.${userId}`,
         },
         (payload: any) => {
-          if (payload.eventType === "INSERT") {
-            const newRow = payload.new as SupabaseNotifRow;
-            const newNotif = rowToNotification(newRow);
-            setNotifications((prev) => {
-              // Avoid duplicates
-              if (prev.some((n) => n.id === newNotif.id)) return prev;
-              return [newNotif, ...prev];
-            });
-            // Show banner for new unread notifications
-            if (!newNotif.isRead && !shownBannerIds.current.has(newNotif.id)) {
-              shownBannerIds.current.add(newNotif.id);
-              setBannerQueue((prev) => [
-                ...prev,
-                {
-                  id: newNotif.id,
-                  type: newNotif.type,
-                  title: newNotif.title,
-                  body: newNotif.body,
-                },
-              ]);
+          const newRow = payload.new as SupabaseNotifRow;
+          if (!newRow) return;
+
+          const notif = rowToNotification(newRow);
+
+          setNotifications((prev) => {
+            const exists = prev.find((n) => n.id === notif.id);
+            if (exists) {
+              return prev.map((n) => (n.id === notif.id ? notif : n));
             }
-          } else if (payload.eventType === "UPDATE") {
-            const updatedRow = payload.new as SupabaseNotifRow;
-            const updatedNotif = rowToNotification(updatedRow);
-            setNotifications((prev) =>
-              prev.map((n) => (n.id === updatedNotif.id ? updatedNotif : n))
-            );
+            return [notif, ...prev];
+          });
+
+          if (!notif.isRead && !shownBannerIds.current.has(notif.id)) {
+            shownBannerIds.current.add(notif.id);
+            setBannerQueue((prev) => [
+              ...prev,
+              {
+                id: notif.id,
+                type: notif.type,
+                title: notif.title,
+                body: notif.body,
+              },
+            ]);
           }
         }
       )
       .subscribe((status: string) => {
         if (status === "SUBSCRIBED") {
-          console.log("[GlobalNotif] Realtime subscribed for user:", userId);
-        } else if (status === "CHANNEL_ERROR") {
-          console.warn("[GlobalNotif] Realtime channel error — falling back to polling");
+          realtimeConnected.current = true;
+          stopPolling();
+          console.log("[GlobalNotif] Realtime active");
         }
       });
 
     realtimeChannel.current = channel;
-  }, [userId]);
 
-  // ─── Polling fallback ─────────────────────────────────────────────────────
-  const startPolling = useCallback(() => {
-    if (pollTimer.current) clearInterval(pollTimer.current);
-    pollTimer.current = setInterval(() => {
-      fetchFromSupabase(true);
-    }, POLL_INTERVAL_MS);
-  }, [fetchFromSupabase]);
+    if (realtimeFallbackTimeout.current) {
+      clearTimeout(realtimeFallbackTimeout.current);
+      realtimeFallbackTimeout.current = null;
+    }
 
-  // ─── App state: refresh when app comes to foreground ─────────────────────
+    realtimeFallbackTimeout.current = setTimeout(() => {
+      if (!realtimeConnected.current) {
+        startPolling();
+      }
+    }, 5000);
+  }, [userId, startPolling]);
+
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state: AppStateStatus) => {
       if (state === "active") {
         fetchFromSupabase(true);
       }
     });
+
     return () => sub.remove();
   }, [fetchFromSupabase]);
 
-  // ─── Bootstrap when user changes ─────────────────────────────────────────
   useEffect(() => {
     if (!userId) {
       setNotifications([]);
       setBannerQueue([]);
       shownBannerIds.current.clear();
+      stopPolling();
+
+      if (realtimeFallbackTimeout.current) {
+        clearTimeout(realtimeFallbackTimeout.current);
+        realtimeFallbackTimeout.current = null;
+      }
+
       if (realtimeChannel.current) {
         supabase.removeChannel(realtimeChannel.current);
         realtimeChannel.current = null;
       }
-      if (pollTimer.current) {
-        clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
+
       return;
     }
 
     loadInitial();
     subscribeRealtime();
-    startPolling();
 
     return () => {
+      stopPolling();
+
+      if (realtimeFallbackTimeout.current) {
+        clearTimeout(realtimeFallbackTimeout.current);
+        realtimeFallbackTimeout.current = null;
+      }
+
       if (realtimeChannel.current) {
         supabase.removeChannel(realtimeChannel.current);
         realtimeChannel.current = null;
       }
-      if (pollTimer.current) {
-        clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
     };
-  }, [userId, loadInitial, subscribeRealtime, startPolling]);
+  }, [userId, loadInitial, subscribeRealtime]);
 
-  // ─── Actions ──────────────────────────────────────────────────────────────
-  const markAsRead = useCallback(
-    async (id: number) => {
-      if (!isSupabaseConfigured()) return;
-      // Optimistic update
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-      );
-      const { error } = await supabase
-        .from("user_notifications")
-        .update({ read_status: true })
-        .eq("id", id);
-      if (error) {
-        console.warn("[GlobalNotif] markAsRead error:", error.message);
-        // Revert on failure
-        await fetchFromSupabase(false);
-      }
-    },
-    [fetchFromSupabase]
-  );
+  const markAsRead = useCallback(async (id: number) => {
+    if (!isSupabaseConfigured()) return;
+
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
+
+    await supabase
+      .from("user_notifications")
+      .update({ read_status: true })
+      .eq("id", id);
+  }, []);
 
   const markAllAsRead = useCallback(async () => {
     if (!userId || !isSupabaseConfigured()) return;
-    // Optimistic update
+
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    const { error } = await supabase
+
+    await supabase
       .from("user_notifications")
       .update({ read_status: true })
       .eq("user_id", userId)
       .eq("read_status", false);
-    if (error) {
-      console.warn("[GlobalNotif] markAllAsRead error:", error.message);
-      await fetchFromSupabase(false);
-    }
-  }, [userId, fetchFromSupabase]);
+  }, [userId]);
 
   const dismissBanner = useCallback(() => {
     setBannerQueue((prev) => prev.slice(1));
@@ -343,7 +346,6 @@ export function GlobalNotificationProvider({
     await fetchFromSupabase(true);
   }, [fetchFromSupabase]);
 
-  // ─── Derived values ───────────────────────────────────────────────────────
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
@@ -364,13 +366,12 @@ export function GlobalNotificationProvider({
   );
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useGlobalNotifications(): GlobalNotificationContextType {
   const ctx = useContext(GlobalNotificationContext);
+
   if (!ctx) {
-    throw new Error(
-      "useGlobalNotifications must be used inside GlobalNotificationProvider"
-    );
+    throw new Error("useGlobalNotifications must be used inside GlobalNotificationProvider");
   }
+
   return ctx;
 }

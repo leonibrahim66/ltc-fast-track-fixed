@@ -19,13 +19,7 @@ import { PickupCompletionModal } from "@/components/pickup-completion-modal";
 import { TRANSPORT_CATEGORIES, PICKUP_STATUS } from "@/constants/app";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { getStaticResponsive } from "@/hooks/use-responsive";
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withRepeat, 
-  withTiming,
-  withSequence,
-} from "react-native-reanimated";
+import Animated from "react-native-reanimated";                
 
 // Screen dimensions available if needed
 const _screenWidth = Dimensions.get("window").width;
@@ -51,21 +45,6 @@ export default function CollectorDashboardScreen() {
 
   // Animation for notification pulse
   const pulseAnim = useSharedValue(1);
-  
-  useEffect(() => {
-    pulseAnim.value = withRepeat(
-      withSequence(
-        withTiming(1.2, { duration: 500 }),
-        withTiming(1, { duration: 500 })
-      ),
-      -1,
-      false
-    );
-  }, [pulseAnim]);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseAnim.value }],
-  }));
 
   // Filter pickups for this collector
   const pendingPickups = pickups.filter(
@@ -393,11 +372,11 @@ export default function CollectorDashboardScreen() {
           </View>
           {/* Notification Badge */}
           {pendingPickups.length > 0 && (
-            <Animated.View style={pulseStyle}>
+            <View>
               <View className="bg-error rounded-full w-10 h-10 items-center justify-center">
                 <Text className="text-white font-bold">{pendingPickups.length}</Text>
               </View>
-            </Animated.View>
+            </View>
           )}
         </View>
       </View>

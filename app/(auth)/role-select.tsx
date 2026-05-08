@@ -42,7 +42,7 @@ const ROLES: RoleCard[] = [
     icon: "person",
     color: "#1B8A4E",
     bgColor: "#C8E6C9",
-    route: "/role-auth?role=customer",
+    route: "/login",
   },
   {
     key: "carrier_driver",
@@ -51,7 +51,7 @@ const ROLES: RoleCard[] = [
     icon: "local-shipping",
     color: "#1565C0",
     bgColor: "#B3D4F5",
-    route: "/role-auth?role=carrier_driver",
+    route: "/carrier-login",
   },
   {
     key: "zone_manager",
@@ -60,7 +60,7 @@ const ROLES: RoleCard[] = [
     icon: "manage-accounts",
     color: "#1B5E20",
     bgColor: "#B2DFDB",
-    route: "/role-auth?role=zone_manager",
+    route: "/register-collector",
   },
   {
     key: "garbage_driver",
@@ -69,7 +69,7 @@ const ROLES: RoleCard[] = [
     icon: "delete",
     color: "#BF360C",
     bgColor: "#FFCCBC",
-    route: "/role-auth?role=garbage_driver",
+    route: "/register-garbage-driver",
   },
   {
     key: "recycler",
@@ -78,7 +78,7 @@ const ROLES: RoleCard[] = [
     icon: "recycling",
     color: "#4527A0",
     bgColor: "#D1C4E9",
-    route: "/role-auth?role=recycler",
+    route: "/register-recycler",
   },
 ];
 

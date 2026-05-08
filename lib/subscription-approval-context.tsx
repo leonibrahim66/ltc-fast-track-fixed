@@ -2,11 +2,6 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { AppState, AppStateStatus } from 'react-native';
 import { StorageEventBus, STORAGE_KEYS } from '@/lib/storage-event-bus';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  sendSubscriptionApprovedNotification,
-  sendSubscriptionRejectedNotification,
-  sendSubscriptionActivatedNotification,
-} from './subscription-notification-service';
 import { sendNotification } from './send-notification';
 
 const STORAGE_KEY_REQUESTS = STORAGE_KEYS.SUBSCRIPTION_REQUESTS;

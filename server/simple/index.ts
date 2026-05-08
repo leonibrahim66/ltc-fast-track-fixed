@@ -526,10 +526,17 @@ interface PawaPayPayoutResponse {
   };
 }
 
-const pawaPayHeaders = () => ({
-  Authorization: `Bearer ${PAWAPAY_API_KEY}`,
-  "Content-Type": "application/json",
-});
+const pawaPayHeaders = () => {
+  const token =
+    process.env.PAWAPAY_PAYOUT_TOKEN ||
+    process.env.PAWAPAY_TOKEN ||
+    process.env.PAWAPAY_API_KEY;
+
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+};
 
 async function initiatePawaPayDeposit(
   params: PawaPayDepositRequest

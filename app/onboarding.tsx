@@ -13,14 +13,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  interpolate,
-  Extrapolation,
-} from "react-native-reanimated";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -289,7 +281,6 @@ export default function OnboardingScreen() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const scrollX = useSharedValue(0);
 
   const isLastPage = currentIndex === pages.length - 1;
 
@@ -449,10 +440,6 @@ export default function OnboardingScreen() {
           bounces={false}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
-          onScroll={(e) => {
-            scrollX.value = e.nativeEvent.contentOffset.x;
-          }}
-          scrollEventThrottle={16}
           getItemLayout={(_, index) => ({
             length: SCREEN_WIDTH,
             offset: SCREEN_WIDTH * index,

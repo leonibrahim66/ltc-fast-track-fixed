@@ -1,4 +1,9 @@
-import * as FileSystem from "expo-file-system/legacy";
+import {
+  documentDirectory,
+  writeAsStringAsync,
+  copyAsync,
+  EncodingType
+} from "expo-file-system";                          
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
 
@@ -63,9 +68,10 @@ export async function exportToCSV<T extends Record<string, any>>(
     }
 
     // For native, save to file system
-    const fileUri = `${FileSystem.documentDirectory}${fullFilename}`;
-    await FileSystem.writeAsStringAsync(fileUri, csv, {
-      encoding: FileSystem.EncodingType.UTF8,
+    const fileUri = `${documentDirectory}${fullFilename}`;
+
+    await writeAsStringAsync(fileUri, csv, {
+      encoding: EncodingType.UTF8,
     });
 
     // Share the file

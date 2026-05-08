@@ -31,6 +31,10 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
+const IS_EXPO_GO =
+  Constants.appOwnership === "expo" ||
+  Constants.executionEnvironment === "storeClient";
+
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 const PUSH_TOKEN_KEY = "@ltc_expo_push_token";
 const PUSH_TOKEN_UPDATED_KEY = "@ltc_expo_push_token_updated_at";
@@ -72,7 +76,7 @@ export interface PushTokenInfo {
  * Call this once at app startup (e.g., in app/_layout.tsx).
  */
 export function configureNotificationHandler() {
-  if (Platform.OS === "web") return;
+  if (Platform.OS === "web" || IS_EXPO_GO) return;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -91,7 +95,7 @@ export function configureNotificationHandler() {
  * Must be called before scheduling notifications on Android.
  */
 export async function setupAndroidChannels() {
-  if (Platform.OS !== "android") return;
+  if (Platform.OS !== "android" || IS_EXPO_GO) return;
 
   // High priority channel for job alerts
   await Notifications.setNotificationChannelAsync("job_alerts", {
@@ -131,6 +135,10 @@ export async function setupAndroidChannels() {
  * Returns the Expo push token or null if unavailable/denied.
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
+  if (IS_EXPO_GO) {
+    console.warn("[PushNotif] Expo Go detected — native push registration disabled.");
+    return null;
+  }
   // Push notifications only work on physical devices
   if (!Device.isDevice) {
     console.warn("[PushNotif] Must use physical device for push notifications");
@@ -214,7 +222,7 @@ export async function getStoredPushToken(): Promise<PushTokenInfo | null> {
 export async function showLocalNotification(
   payload: JobNotificationPayload
 ): Promise<string> {
-  if (Platform.OS === "web") return "web-noop";
+  if (Platform.OS === "web" || IS_EXPO_GO) return "expo-go-noop";
   const channelId = getChannelForEvent(payload.event);
 
   const notifId = await Notifications.scheduleNotificationAsync({
@@ -472,7 +480,7 @@ export function buildNewJobAvailableNotif(params: {
 export function onNotificationReceived(
   handler: (notification: Notifications.Notification) => void
 ): () => void {
-  if (Platform.OS === "web") return () => {};
+  if (Platform.OS === "web" || IS_EXPO_GO) return () => {};
   const subscription = Notifications.addNotificationReceivedListener(handler);
   return () => subscription.remove();
 }
@@ -484,7 +492,7 @@ export function onNotificationReceived(
 export function onNotificationTapped(
   handler: (response: Notifications.NotificationResponse) => void
 ): () => void {
-  if (Platform.OS === "web") return () => {};
+  if (Platform.OS === "web" || IS_EXPO_GO) return () => {};
   const subscription =
     Notifications.addNotificationResponseReceivedListener(handler);
   return () => subscription.remove();
@@ -498,10 +506,7 @@ export function getLastNotificationResponse():
   | Notifications.NotificationResponse
   | null
   | undefined {
-  if (Platform.OS === "web") {
-    // getLastNotificationResponse is not available on web
-    return null;
-  }
+  if (Platform.OS === "web" || IS_EXPO_GO) return null;
   return Notifications.getLastNotificationResponse();
 }
 
@@ -511,6 +516,8 @@ export function getLastNotificationResponse():
  * Set the app badge count.
  */
 export async function setBadgeCount(count: number): Promise<void> {
+  if (IS_EXPO_GO) return;
+
   try {
     await Notifications.setBadgeCountAsync(count);
   } catch {
@@ -531,5 +538,7 @@ export async function clearBadge(): Promise<void> {
  * Dismiss all delivered notifications from the notification tray.
  */
 export async function dismissAllNotifications(): Promise<void> {
+  if (IS_EXPO_GO) return;
+
   await Notifications.dismissAllNotificationsAsync();
 }

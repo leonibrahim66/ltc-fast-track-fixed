@@ -19,13 +19,13 @@ import { formatPhoneNumber, isValidAmount, isValidPIN } from "@/lib/validation";
 import { apiPost } from "@/lib/api-client";
 import { getOrCreateBackendUserId } from "@/lib/user-session";
 
-const MIN_WITHDRAWAL = 50;
+const MIN_WITHDRAWAL = 5;
 const MAX_WITHDRAWAL = 10000;
 
 export default function WithdrawScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { wallet, refreshWallet } = useWallet();
+  const { wallet, refreshWallet, setWallet, transactions, setTransactions } = useWallet();
 
   const [amount, setAmount] = useState("");
   const [withdrawalPin, setWithdrawalPin] = useState("");
@@ -113,12 +113,40 @@ export default function WithdrawScreen() {
           {
             text: "OK",
             onPress: async () => {
-              // Refresh wallet using the stable backend userId
+
+              const amountNumber = Number(withdrawAmount);
+
+              // Create withdrawal transaction
+              const withdrawalTransaction = {
+                id: Date.now().toString(),
+                type: "withdrawal",
+                amount: amountNumber,
+                status: "completed",
+                provider: wallet?.linkedAccount?.provider || "Mobile Money",
+                createdAt: new Date().toISOString(),
+              };
+
+              // Update transactions
+              setTransactions((prev: any[]) => [
+                withdrawalTransaction,
+                ...prev,
+              ]);
+
+              // Update wallet instantly
+              if (wallet) {
+                setWallet({
+                  ...wallet,
+                  totalBalance: wallet.totalBalance - amountNumber,
+                });
+              }
+
+              // Refresh backend wallet
               await refreshWallet(backendUserId);
+
               router.push("/(tabs)/wallet" as any);
-            },
-          },
-        ]
+             },
+           }
+         ]
       );
 
       // Haptic feedback

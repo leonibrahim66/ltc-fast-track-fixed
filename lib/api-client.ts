@@ -1,78 +1,73 @@
 /**
- * Central API client for the LTC Fast Track backend.
- *
- * All API calls MUST go through this module so that:
- *  1. The base URL is read from EXPO_PUBLIC_API_URL (never hardcoded).
- *  2. Every request automatically includes the correct Content-Type header.
- *  3. Non-2xx responses are thrown as Error objects with the server message.
- *
- * Usage:
- *   import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
- *   const pickups = await apiGet<ApiPickup[]>("/api/pickups?userId=user_abc");
- *   const result  = await apiPost("/api/payments/pawapay", { amount, phoneNumber });
+ * Hardened Central API client for LTC Fast Track backend
  */
 
-// ─── Base URL ─────────────────────────────────────────────────────────────────
+const PROD_API_URL = "https://ltc-fast-track-fixed-production.up.railway.app";
+const DEV_API_URL = "http://192.168.43.140:3000";
 
-/**
- * Read from EXPO_PUBLIC_API_URL.
- * Falls back to EXPO_PUBLIC_API_BASE_URL for backward compatibility,
- * then throws at call time (never silently falls back to localhost in production).
- */
 export function getApiBaseUrl(): string {
-  const url =
-    process.env.EXPO_PUBLIC_API_URL ??
-    process.env.EXPO_PUBLIC_API_BASE_URL;
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
 
-  if (!url) {
-    throw new Error(
-      "[api-client] EXPO_PUBLIC_API_URL is not set. " +
-        "Add it to your .env file or Secrets panel."
-    );
+  if (envUrl && envUrl.trim().length > 0) {
+    return envUrl.replace(/\/$/, "");
   }
-  // Strip trailing slash so callers can always prefix paths with "/"
-  return url.replace(/\/$/, "");
+
+  // FORCE CLOUD BACKEND FOR ALL DEVICES
+  return "https://ltc-fast-track-fixed-production.up.railway.app";
 }
 
-// ─── Core request helper ──────────────────────────────────────────────────────
-
-async function request<T>(
-  path: string,
-  options?: RequestInit
-): Promise<T> {
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getApiBaseUrl();
   const url = `${base}${path}`;
 
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    ...options,
-  });
+  console.log("[API REQUEST] =>", url);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
+  let res: Response;
+
+  try {
+    res = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    console.error("[API TRANSPORT ERROR]", url, err);
+    throw new Error(`Unable to reach backend server`);
+  }
+
+  clearTimeout(timer);
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
       const body = await res.json();
       message = body?.message ?? body?.error ?? message;
-    } catch {
-      // ignore JSON parse errors on error responses
-    }
+    } catch {}
+    console.error("[API RESPONSE ERROR]", url, message);
     throw new Error(message);
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    console.error("[API JSON PARSE ERROR]", url, text);
+    throw new Error("Invalid server response");
+  }
 }
 
-// ─── Public helpers ───────────────────────────────────────────────────────────
-
-/** GET request — returns parsed JSON body. */
 export async function apiGet<T>(path: string): Promise<T> {
   return request<T>(path);
 }
 
-/** POST request — serialises body to JSON. */
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, {
     method: "POST",
@@ -80,7 +75,6 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-/** PATCH request — serialises body to JSON. */
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, {
     method: "PATCH",
@@ -88,7 +82,6 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-/** DELETE request. */
 export function apiDelete<T>(path: string): Promise<T> {
   return request<T>(path, { method: "DELETE" });
 }

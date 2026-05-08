@@ -25,7 +25,7 @@ const MAX_DEPOSIT = 50000;
 export default function DepositScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { refreshWallet } = useWallet();
+  const { refreshWallet, wallet, setWallet, transactions, setTransactions } = useWallet();
 
   const [amount, setAmount] = useState("");
   const [phoneNumber, setPhoneNumber] = useState(user?.phone || "");
@@ -88,8 +88,34 @@ export default function DepositScreen() {
           {
             text: "OK",
             onPress: async () => {
-              // Refresh wallet using the stable backend userId
+
+              const amountNumber = Number(depositAmount);
+
+              // Create new transaction
+              const newTransaction = {
+                id: Date.now().toString(),
+                type: "deposit",
+                amount: amountNumber,
+                status: "completed",
+                provider: "Airtel Money",
+                createdAt: new Date().toISOString(),
+              };
+
+              // Update transaction history
+              setTransactions((prev: any[]) => [newTransaction, ...prev]);
+
+              // Update wallet instantly
+              if (wallet) {
+                setWallet({
+                  ...wallet,
+                  totalBalance: wallet.totalBalance + amountNumber,
+                  rechargedBalance: wallet.rechargedBalance + amountNumber,
+                });
+              }
+
+              // Refresh from backend
               await refreshWallet(backendUserId);
+
               router.push("/(tabs)/wallet" as any);
             },
           },

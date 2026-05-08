@@ -17,6 +17,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useRef,
 } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import { PickupStatus } from "@/constants/app";
@@ -120,39 +121,53 @@ export function PickupsProvider({ children }: { children: React.ReactNode }) {
   const [pickups, setPickups] = useState<PickupRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
+  const requestInFlightRef = useRef(false);
 
   const loadPickups = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const apiPickups = await apiFetchPickups();
-      setPickups(apiPickups.map(toPickupRequest));
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to load pickups";
-      setError(msg);
-      console.error("[PickupsContext] loadPickups error:", msg);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  if (requestInFlightRef.current) {
+    return;
+  }
+
+  requestInFlightRef.current = true;
+  setIsLoading(true);
+  setError(null);
+
+  try {
+    const apiPickups = await apiFetchPickups();
+    setPickups(apiPickups.map(toPickupRequest));
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : "Failed to load pickups";
+    setError(msg);
+    console.error("[PickupsContext] loadPickups error:", msg);
+  } finally {
+    requestInFlightRef.current = false;
+    setIsLoading(false);
+  }
+}, []);
 
   // Initial load
   useEffect(() => {
-    loadPickups();
-  }, [loadPickups]);
+  if (hasLoadedOnceRef.current) return;
+
+  hasLoadedOnceRef.current = true;
+  loadPickups();
+}, [loadPickups]);
 
   // Reload when app returns to foreground
   useEffect(() => {
-    let appStateRef: AppStateStatus = AppState.currentState;
-    const sub = AppState.addEventListener("change", (next) => {
-      if (appStateRef.match(/inactive|background/) && next === "active") {
-        loadPickups();
-      }
-      appStateRef = next;
-    });
-    return () => sub.remove();
-  }, [loadPickups]);
+  let appStateRef: AppStateStatus = AppState.currentState;
+
+  const sub = AppState.addEventListener("change", (next) => {
+    if (appStateRef.match(/inactive|background/) && next === "active") {
+      loadPickups();
+    }
+    appStateRef = next;
+  });
+
+  return () => sub.remove();
+}, [loadPickups]);
 
   // ── createPickup ────────────────────────────────────────────────────────────
   const createPickup = useCallback(

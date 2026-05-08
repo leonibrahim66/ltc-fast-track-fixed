@@ -12,7 +12,12 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system/legacy";
+import {
+  documentDirectory,
+  writeAsStringAsync,
+  copyAsync,
+  EncodingType
+} from "expo-file-system";
 import { captureRef } from "react-native-view-shot";
 import { ScreenContainer } from "@/components/screen-container";
 import { usePayments } from "@/lib/payments-context";
@@ -121,8 +126,8 @@ export default function PaymentReceiptScreen() {
       } else {
         // For mobile, save to downloads
         const fileName = `LTC-Receipt-${payment.reference}.png`;
-        const downloadPath = `${FileSystem.documentDirectory}${fileName}`;
-        await FileSystem.copyAsync({ from: uri, to: downloadPath });
+        const downloadPath = `${documentDirectory}${fileName}`;
+        await copyAsync({ from: uri, to: downloadPath });
         Alert.alert("Success", `Receipt saved to ${fileName}`);
       }
     } catch (error) {

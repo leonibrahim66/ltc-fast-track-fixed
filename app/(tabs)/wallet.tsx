@@ -34,7 +34,13 @@ interface Transaction {
 export default function WalletTabScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { wallet, refreshWallet, isLoading: walletLoading } = useWallet();
+  const {
+  wallet,
+  refreshWallet,
+  isLoading: walletLoading,
+  transactions,
+  setTransactions,
+} = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
@@ -76,8 +82,6 @@ export default function WalletTabScreen() {
     linkedPhoneNumber: wallet?.linkedAccount?.phoneNumber || "",
     linkedProvider: wallet?.linkedAccount?.provider || "",
   };
-
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // Fetch linked account on mount and refresh
 

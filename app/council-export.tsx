@@ -16,7 +16,12 @@ import { useTonnage, WASTE_TYPE_LABELS } from "@/lib/tonnage-context";
 import { convertToCSV, ExportColumn } from "@/lib/export-utils";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import * as FileSystem from "expo-file-system/legacy";
+import {
+  documentDirectory,
+  writeAsStringAsync,
+  copyAsync,
+  EncodingType
+} from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
 import { getStaticResponsive } from "@/hooks/use-responsive";
@@ -297,8 +302,10 @@ export default function CouncilExportScreen() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       } else {
-        const fileUri = `${FileSystem.documentDirectory}${fullFilename}`;
-        await FileSystem.writeAsStringAsync(fileUri, csvData, { encoding: FileSystem.EncodingType.UTF8 });
+        const fileUri = `${documentDirectory}${fullFilename}`;
+       await writeAsStringAsync(fileUri, csvData, {
+         encoding: EncodingType.UTF8,
+       });
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(fileUri, { mimeType: "text/csv", dialogTitle: `Export ${type}` });
         }

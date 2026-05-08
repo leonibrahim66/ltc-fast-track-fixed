@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, AppStateStatus } from "react-native";
 import { UserRole } from "@/constants/app";
@@ -17,14 +17,9 @@ export interface User {
   id: string;
   fullName: string;
   phone: string;
-  password?: string; // Stored locally for demo, in production use secure backend
+  password?: string;
   role: UserRole;
-  location?: {
-    latitude: number;
-    longitude: number;
-    address?: string;
-  };
-  // Collector specific fields
+  location?: { latitude: number; longitude: number; address?: string };
   idNumber?: string;
   transportCategory?: string;
   vehicleRegistration?: string;
@@ -34,25 +29,19 @@ export interface User {
   vehicleCapacity?: string;
   zone?: string;
   zoneId?: string;
-  // Profile picture
   profilePicture?: string;
-  // Collector availability status
   availabilityStatus?: "online" | "offline" | "busy";
-  // Foot collector fields
   collectorType?: "vehicle" | "foot";
   serviceRadius?: string;
-  // Affiliation fee status
   affiliationFeePaid?: boolean;
   affiliationFeeType?: string;
   affiliationFeePaidAt?: string;
-  // Subscription info
   subscription?: {
     planId: string;
     planName: string;
     expiresAt: string;
     pickupsRemaining: number;
   };
-  // Zone Manager registration fields
   status?: "pending_review" | "active" | "rejected" | "suspended";
   kycStatus?: "pending" | "verified" | "rejected";
   townId?: string;
@@ -60,7 +49,6 @@ export interface User {
   proposedZoneName?: string;
   firstName?: string;
   lastName?: string;
-  // Customer location fields (province/city/zone matching)
   province?: string;
   provinceId?: string;
   city?: string;
@@ -71,7 +59,6 @@ export interface User {
   assignedZoneId?: string;
   assignedZoneName?: string;
   zoneMatchStatus?: "matched" | "unassigned";
-  // Garbage Driver specific fields
   nrcNumber?: string;
   driverLicenseNumber?: string;
   vehiclePlateNumber?: string;
@@ -104,60 +91,52 @@ const AUTH_STORAGE_KEYS = {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const hydratedOnce = useRef(false);
 
   const loadUser = useCallback(async () => {
-    // Hard timeout: if AsyncStorage takes more than 2 seconds (e.g. on fresh APK install
-    // where native modules are still initializing), resolve immediately with no user.
-    // This prevents the splash screen from freezing indefinitely.
-    const timeoutPromise = new Promise<void>((resolve) =>
-      setTimeout(() => {
-        console.warn('[AuthProvider] loadUser timed out after 2s — proceeding without session');
-        resolve();
-      }, 2000)
-    );
+    try {
+      const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USER);
 
-    const loadPromise = (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USER);
-        if (stored) {
-          const userData = JSON.parse(stored);
-          // Migrate collector → zone_manager role
-          if (userData.role === "collector") {
-            userData.role = "zone_manager";
-            await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(userData));
-            // Also migrate in users DB
-            const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
-            if (usersDb) {
-              const users = JSON.parse(usersDb);
-              if (users[userData.id]) {
-                users[userData.id].role = "zone_manager";
-                await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USERS_DB, JSON.stringify(users));
-              }
+      if (stored) {
+        const userData = JSON.parse(stored);
+
+        if (userData.role === "collector") {
+          userData.role = "zone_manager";
+          await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(userData));
+
+          const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
+          if (usersDb) {
+            const users = JSON.parse(usersDb);
+            if (users[userData.id]) {
+              users[userData.id].role = "zone_manager";
+              await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USERS_DB, JSON.stringify(users));
             }
           }
-          setUser(userData);
         }
-      } catch (error) {
-        console.error("Failed to load user:", error);
-      }
-    })();
 
-    // Race: whichever finishes first (load or timeout) unblocks the app
-    await Promise.race([loadPromise, timeoutPromise]);
-    setIsLoading(false);
+        setUser(userData);
+      } else {
+        setUser(null);
+      }
+    } catch (error) {
+      console.error("[AuthProvider] Failed to load user:", error);
+      setUser(null);
+    } finally {
+      if (!hydratedOnce.current) {
+        hydratedOnce.current = true;
+        setIsLoading(false);
+      }
+    }
   }, []);
 
-  // Load user on mount
   useEffect(() => {
     loadUser();
   }, [loadUser]);
 
-  // Real-time: reload when another context updates the user record
   useEffect(() => {
     return StorageEventBus.subscribe(AUTH_STORAGE_KEYS.USER, loadUser);
   }, [loadUser]);
 
-  // Cross-device: reload when app returns to foreground
   useEffect(() => {
     let appStateRef: AppStateStatus = AppState.currentState;
     const sub = AppState.addEventListener("change", (next) => {
@@ -171,28 +150,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (phone: string, password: string): Promise<boolean> => {
     try {
-      // Get users database
       const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
       const users: Record<string, User & { password: string }> = usersDb ? JSON.parse(usersDb) : {};
 
-      // Find user by phone
       const foundUser = Object.values(users).find(
         (u) => u.phone === phone && u.password === password
       );
 
-      if (foundUser) {
-        // Migrate collector → zone_manager on login
-        if (foundUser.role === "collector") {
-          foundUser.role = "zone_manager" as any;
-          users[foundUser.id] = foundUser;
-          await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USERS_DB, JSON.stringify(users));
-        }
-        const { password: _, ...userWithoutPassword } = foundUser;
-        setUser(userWithoutPassword);
-        await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(userWithoutPassword));
-        return true;
+      if (!foundUser) return false;
+
+      if (foundUser.role === "collector") {
+        foundUser.role = "zone_manager" as any;
+        users[foundUser.id] = foundUser;
+        await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USERS_DB, JSON.stringify(users));
       }
-      return false;
+
+      const { password: _, ...userWithoutPassword } = foundUser;
+      setUser(userWithoutPassword);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(userWithoutPassword));
+      StorageEventBus.emit(AUTH_STORAGE_KEYS.USER);
+      return true;
     } catch (error) {
       console.error("Login failed:", error);
       return false;
@@ -201,67 +178,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (userData: Partial<User> & { password: string }): Promise<boolean> => {
     try {
-      // Get existing users
       const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
       const users: Record<string, User & { password: string }> = usersDb ? JSON.parse(usersDb) : {};
 
-      // Check if phone already exists
       const phoneExists = Object.values(users).some((u) => u.phone === userData.phone);
-      if (phoneExists) {
-        return false;
-      }
+      if (phoneExists) return false;
 
-      // Create new user — preserve all fields including Zone Manager registration data
       const newUser: User & { password: string } = {
         id: `user_${Date.now()}`,
         fullName: userData.fullName || "",
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        phone: userData.phone || "",
-        role: userData.role || "residential",
-        status: userData.status,
-        kycStatus: userData.kycStatus,
-        townId: userData.townId,
-        selectedZoneId: userData.selectedZoneId,
-        proposedZoneName: userData.proposedZoneName,
-        location: userData.location,
-        idNumber: userData.idNumber,
-        transportCategory: userData.transportCategory,
-        vehicleRegistration: userData.vehicleRegistration,
-        vehicleDetails: userData.vehicleDetails,
-        // Customer location fields
-        province: userData.province,
-        provinceId: userData.provinceId,
-        city: userData.city,
-        cityId: userData.cityId,
-        areaType: userData.areaType,
-        areaName: userData.areaName,
-        fullAddress: userData.fullAddress,
-        assignedZoneId: userData.assignedZoneId,
+        ...userData,
         zoneId: userData.zoneId ?? userData.assignedZoneId,
-        assignedZoneName: userData.assignedZoneName,
-        zoneMatchStatus: userData.zoneMatchStatus,
-        // Garbage Driver fields
-        nrcNumber: userData.nrcNumber,
-        driverLicenseNumber: userData.driverLicenseNumber,
-        vehiclePlateNumber: userData.vehiclePlateNumber,
-        nrcDocumentUri: userData.nrcDocumentUri,
-        zoneManagerId: userData.zoneManagerId,
-        inviteCode: userData.inviteCode,
-        driverStatus: userData.driverStatus,
         driverRating: userData.driverRating ?? 0,
         pickupsToday: userData.pickupsToday ?? 0,
         isOnline: userData.isOnline ?? false,
         password: userData.password,
       };
 
-      // Save to database
       users[newUser.id] = newUser;
       await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USERS_DB, JSON.stringify(users));
-      // Notify admin panels that a new user registered
       StorageEventBus.emit(AUTH_STORAGE_KEYS.USERS_DB);
 
-      // Log in the new user
       const { password: _, ...userWithoutPassword } = newUser;
       setUser(userWithoutPassword);
       await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(userWithoutPassword));
@@ -275,14 +212,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEYS.USER);
-      setUser(null);
-      // Notify all layout guards to redirect to welcome screen immediately
-      StorageEventBus.emit(BUS_KEYS.LOGOUT);
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEYS.USER);
+    setUser(null);
+    StorageEventBus.emit(BUS_KEYS.LOGOUT);
   }, []);
 
   const updateUser = useCallback(async (updates: Partial<User>) => {
@@ -291,10 +223,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const updatedUser = { ...user, ...updates };
       setUser(updatedUser);
+
       await AsyncStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(updatedUser));
       StorageEventBus.emit(AUTH_STORAGE_KEYS.USER);
 
-      // Also update in users database
       const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
       if (usersDb) {
         const users = JSON.parse(usersDb);
@@ -328,8 +260,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
   return context;
 }
