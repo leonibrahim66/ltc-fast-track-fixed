@@ -677,21 +677,6 @@ app.get("/api/users/:userId", (req: Request, res: Response) => {
   return res.json({ success: true, data: user });
 });
 
-app.get("/api/debug/users", (_req, res) => {
-  const users = db.prepare("SELECT * FROM users").all();
-  res.json(users);
-});
-
-app.get("/api/debug/wallets", (_req, res) => {
-  const wallets = db.prepare("SELECT * FROM wallets").all();
-  res.json(wallets);
-});
-
-app.get("/api/debug/linked", (_req, res) => {
-  const linked = db.prepare("SELECT * FROM linked_accounts").all();
-  res.json(linked);
-});
-
 // ─── Payments — PawaPay Deposit ─────────────────────────────────────────────────────
 
 /**
