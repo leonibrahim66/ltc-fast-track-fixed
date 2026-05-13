@@ -2,19 +2,16 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Enable pnpm
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
-
-# Copy only package files first (better install reliability)
-COPY package.json pnpm-lock.yaml ./
+# Copy package files
+COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN pnpm install
+RUN npm install
 
-# Copy rest of the project
+# Copy project files
 COPY . .
 
-# Expose port
+# Expose app port
 EXPOSE 3000
 
 # Start server
