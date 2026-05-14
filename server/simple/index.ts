@@ -96,7 +96,7 @@ async function initDB(): Promise<void> {
         id         TEXT PRIMARY KEY,
         "userId"   TEXT NOT NULL UNIQUE,
         balance    NUMERIC NOT NULL DEFAULT 0,
-        "updatedAt" TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+        "updatedAt" TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
       );
 
       CREATE TABLE IF NOT EXISTS transactions (
@@ -109,7 +109,7 @@ async function initDB(): Promise<void> {
         provider     TEXT,
         "phoneNumber" TEXT,
         "createdAt"  TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        "updatedAt"  TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+        "updatedAt"  TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
       );
 
       CREATE TABLE IF NOT EXISTS linked_accounts (
@@ -120,7 +120,7 @@ async function initDB(): Promise<void> {
         "withdrawalPin" TEXT NOT NULL,
         "isActive"      INTEGER NOT NULL DEFAULT 1,
         "createdAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        "updatedAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+        "updatedAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
       );
 
       CREATE TABLE IF NOT EXISTS pickups (
@@ -150,7 +150,7 @@ async function initDB(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_linked_accounts_userId ON linked_accounts("userId");
       CREATE INDEX IF NOT EXISTS idx_pickups_userId         ON pickups("userId");
       CREATE INDEX IF NOT EXISTS idx_pickups_status         ON pickups(status);
-     );
+   `);
 
     // Safe column migrations
     const alterStatements = [
