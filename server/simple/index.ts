@@ -97,7 +97,6 @@ async function initDB(): Promise<void> {
         "userId"   TEXT NOT NULL UNIQUE,
         balance    NUMERIC NOT NULL DEFAULT 0,
         "updatedAt" TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS transactions (
@@ -111,7 +110,6 @@ async function initDB(): Promise<void> {
         "phoneNumber" TEXT,
         "createdAt"  TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
         "updatedAt"  TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS linked_accounts (
@@ -123,7 +121,6 @@ async function initDB(): Promise<void> {
         "isActive"      INTEGER NOT NULL DEFAULT 1,
         "createdAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
         "updatedAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS pickups (
