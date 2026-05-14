@@ -150,7 +150,7 @@ async function initDB(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_linked_accounts_userId ON linked_accounts("userId");
       CREATE INDEX IF NOT EXISTS idx_pickups_userId         ON pickups("userId");
       CREATE INDEX IF NOT EXISTS idx_pickups_status         ON pickups(status);
-    `);
+     );
 
     // Safe column migrations
     const alterStatements = [
