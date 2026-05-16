@@ -200,63 +200,59 @@ export function GlobalNotificationProvider({
 
     if (realtimeChannel.current) {
       supabase.removeChannel(realtimeChannel.current);
-      realtimeChannel.current = null;
+      realtimeChannel.current = null;           
     }
 
     realtimeConnected.current = false;
 
-    const channel = supabase
-      .channel(`user_notifications_${userId}`)
-      .on(
-        "postgres_changes" as any,
-        {
-          event: "*",
-          schema: "public",
-          table: "user_notifications",
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload: any) => {
-          const newRow = payload.new as SupabaseNotifRow;
-          if (!newRow) return;
+    try {
+      const channel = supabase
+        .channel(`user_notifications_${userId}`)
+        .on(
+          "postgres_changes" as any,
+          {
+            event: "*",
+            schema: "public",
+            table: "user_notifications",
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload: any) => {
+            const newRow = payload.new as SupabaseNotifRow;
+            if (!newRow) return;
 
-          const notif = rowToNotification(newRow);
+            const notif = rowToNotification(newRow);
 
-          setNotifications((prev) => {
-            const exists = prev.find((n) => n.id === notif.id);
-            if (exists) {
-              return prev.map((n) => (n.id === notif.id ? notif : n));
-            }
-            return [notif, ...prev];
-          });
+            setNotifications((prev) => {
+              const exists = prev.find((n) => n.id === notif.id);
+             if (exists) {
+               return prev.map((n) => (n.id === notif.id ? notif : n));
+             }
+             return [notif, ...prev];
+           });
 
-          if (!notif.isRead && !shownBannerIds.current.has(notif.id)) {
-            shownBannerIds.current.add(notif.id);
-            setBannerQueue((prev) => [
-              ...prev,
-              {
-                id: notif.id,
-                type: notif.type,
-                title: notif.title,
-                body: notif.body,
-              },
-            ]);
-          }
-        }
-      )
-      .subscribe((status: string) => {
-        if (status === "SUBSCRIBED") {
-          realtimeConnected.current = true;
-          stopPolling();
-          console.log("[GlobalNotif] Realtime active");
-        }
-      });
+           if (!notif.isRead && !shownBannerIds.current.has(notif.id)) {
+             shownBannerIds.current.add(notif.id);
+             setBannerQueue((prev) => [
+               ...prev,
+               { id: notif.id, type: notif.type, title: notif.title, body: notif.body },
+             ]);
+           }
+         }
+       )
+       .subscribe((status: string) => {
+         if (status === "SUBSCRIBED") {
+           realtimeConnected.current = true;
+           stopPolling();
+           console.log("[GlobalNotif] Realtime active");
+         }
+       });
 
-    realtimeChannel.current = channel;
-
-    if (realtimeFallbackTimeout.current) {
-      clearTimeout(realtimeFallbackTimeout.current);
-      realtimeFallbackTimeout.current = null;
-    }
+     realtimeChannel.current = channel;
+   } catch (error) {
+     console.warn("[GlobalNotif] Realtime not available, falling back to polling:", error);
+     startPolling();
+     return;
+   }
 
     realtimeFallbackTimeout.current = setTimeout(() => {
       if (!realtimeConnected.current) {

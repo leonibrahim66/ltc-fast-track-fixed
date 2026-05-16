@@ -285,10 +285,10 @@ export default function RoleAuthScreen() {
           // Check if user has seen onboarding for this role
           const onboardingSeen = await AsyncStorage.getItem(`@ltc_onboarding_seen_${role}`);
           if (!onboardingSeen) {
-            router.replace(`/onboarding?role=${role}` as any);
+            setTimeout(() => router.replace(`/onboarding?role=${role}` as any), 100);
           } else {
             const dashboard = getRoleDashboard(userRole);
-            router.replace(dashboard as any);
+            setTimeout(() => router.replace(dashboard as any), 100);
           }
         }
       } else {
@@ -334,10 +334,10 @@ export default function RoleAuthScreen() {
             // Check if user has seen onboarding for this role
             const onboardingSeen = await AsyncStorage.getItem(`@ltc_onboarding_seen_${role}`);
             if (!onboardingSeen) {
-              router.replace(`/onboarding?role=${role}` as any);
+              setTimeout(() => router.replace(`/onboarding?role=${role}` as any), 100);
             } else {
               const dashboard = getRoleDashboard(userData.role);
-              router.replace(dashboard as any);
+              setTimeout(() => router.replace(dashboard as any), 100);
             }
           }
         } else {
@@ -443,7 +443,7 @@ export default function RoleAuthScreen() {
         Alert.alert(
           "Registration Successful",
           `Welcome to LTC FAST TRACK! ${matchMsg}`,
-          [{ text: "Continue", onPress: () => router.replace("/onboarding?role=customer" as any) }]
+          [{ text: "Continue", onPress: () => setTimeout(() => router.replace("/onboarding?role=customer" as any), 100) }]
         );
       } else {
         Alert.alert("Registration Failed", "Phone number already registered. Please login instead.");
