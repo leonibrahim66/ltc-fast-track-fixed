@@ -340,7 +340,7 @@ app.get("/api/wallet/:userId", async (req: Request, res: Response) => {
     const user = await getUserById(req.params["userId"]);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
     const wallet = await getOrCreateWallet(req.params["userId"]);
-    return res.json({ success: true, data: { walletId: wallet.id, userId: wallet.userId, balance: wallet.balance, phoneNumber: user.phoneNumber, updatedAt: wallet.updatedAt } });
+    return res.json({ success: true, data: { walletId: wallet.id, userId: wallet.userId, balance: Number(wallet.balance), totalBalance: Number(wallet.balance), phoneNumber: user.phoneNumber, updatedAt: wallet.updatedAt } });
   } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Internal server error" }); }
 });
 
