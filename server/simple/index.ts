@@ -401,7 +401,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
     const e164Phone = toE164(userCountry, linked.phoneNumber);
     const correspondent = detectNetwork(userCountry, linked.phoneNumber);
     const currency = currencyForCountry(userCountry);
-    const pawaPayResponse = await initiatePawaPayPayout({ payoutId, amount: String(Number(amount).toFixed(2)), currency, country: userCountry, correspondent, recipient: { type: "MSISDN", address: { value: e164Phone } }, statementDescription: "LTC Fast Track withdrawal", clientReferenceId: userId, callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`, });
+    const pawaPayResponse = await initiatePawaPayPayout({ payoutId, amount: String(Number(amount).toFixed(2)), currency, country: userCountry, correspondent, recipient: { type: "MSISDN", address: { value: e164Phone } }, statementDescription: "LTC Fast Track withdrawal", clientReferenceId: userId });
     if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Withdrawal rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
     const txn = await createTransaction(userId, payoutId, -Number(amount), "withdrawal", correspondent, e164Phone);
     await updateWalletBalance(userId, -Number(amount));
