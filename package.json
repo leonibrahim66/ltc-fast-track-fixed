@@ -109,6 +109,6 @@
   },
     "engines": {
       "node": "20.x"
-   }
+   },
   "packageManager": "pnpm@9.12.0"
 }
