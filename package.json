@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 npx expo start --web --port ${EXPO_PORT:-8081}",
     "dev:server": "cross-env NODE_ENV=development tsx watch server/simple/index.ts",
+    "start": "tsx server/simple/index.ts"
     "build": "expo export -p web",
     "check": "tsc --noEmit",
     "lint": "expo lint",
@@ -29,7 +30,6 @@
     "@trpc/server": "^11.16.0",
     "@types/uuid": "^10.0.0",
     "axios": "^1.13.2",
-    "better-sqlite3": "^9.4.5",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
@@ -107,5 +107,8 @@
     "typescript": "~5.8.3",
     "vitest": "^2.1.9"
   },
+    "engines": {
+      "node": "20.x"
+   }
   "packageManager": "pnpm@9.12.0"
 }
