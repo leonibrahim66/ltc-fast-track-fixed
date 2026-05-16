@@ -286,7 +286,7 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
     const correspondent = detectNetwork(countryCode, phoneNumber);
     const currency = currencyForCountry(countryCode);
     const depoitId = uuidv4();
-    const depositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+    const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     const pawaPayResponse = await initiatePawaPayDeposit({ depositId, payer: { type: "MMO", accountDetails: { phoneNumber: e164Phone, provider: correspondent } }, amount: String(Number(amount).toFixed(2)), currency, clientReferenceId: user.id, customerMessage: "LTC Fast Track payment" });
     if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Payment rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
     const transaction = await createTransaction(user.id, depositId, Number(amount), "deposit", correspondent, e164Phone);
@@ -398,7 +398,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
     if (!linked) return res.status(400).json({ success: false, message: "No linked account found" });
     if (linked.withdrawalPin !== withdrawalPin) return res.status(400).json({ success: false, message: "Invalid withdrawal PIN" });
     const payoutId = uuidv4();
-    const payoutId = `LTC-WD-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+    const displayWithdrawalId = `LTC-WD-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     const userCountry = user.country ?? "ZMB";
     const e164Phone = toE164(userCountry, linked.phoneNumber);
     const correspondent = detectNetwork(userCountry, linked.phoneNumber);
