@@ -285,9 +285,9 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
     const e164Phone = toE164(countryCode, phoneNumber);
     const correspondent = detectNetwork(countryCode, phoneNumber);
     const currency = currencyForCountry(countryCode);
-    const depoitId = uuidv4();
+    const depositId = uuidv4();
     const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-    const pawaPayResponse = await initiatePawaPayDeposit({ depositId, displayDepositId, payer: { type: "MMO", accountDetails: { phoneNumber: e164Phone, provider: correspondent } }, amount: String(Number(amount).toFixed(2)), currency, clientReferenceId: user.id, customerMessage: "LTC Fast Track payment" });
+    const pawaPayResponse = await initiatePawaPayDeposit({ depositId, payer: { type: "MMO", accountDetails: { phoneNumber: e164Phone, provider: correspondent } }, amount: String(Number(amount).toFixed(2)), currency, clientReferenceId: user.id, customerMessage: "LTC Fast Track payment" });
     if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Payment rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
     const transaction = await createTransaction(user.id, depositId, Number(amount), "deposit", correspondent, e164Phone);
     return res.status(201).json({ success: true, data: { depositId: displayDepositId, providerDepositId: depositId, status: pawaPayResponse.status, amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, userId: user.id, transactionId: transaction.id, createdAt: pawaPayResponse.created ?? new Date().toISOString() }, timestamp: new Date().toISOString() });
@@ -403,7 +403,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
     const e164Phone = toE164(userCountry, linked.phoneNumber);
     const correspondent = detectNetwork(userCountry, linked.phoneNumber);
     const currency = currencyForCountry(userCountry);
-    const pawaPayResponse = await initiatePawaPayPayout({ payoutId, displayWithdrawalId, amount: String(Number(amount).toFixed(2)), currency, country: userCountry, correspondent, recipient: { type: "MSISDN", address: { value: e164Phone } }, statementDescription: "LTC Fast Track withdrawal", clientReferenceId: userId });
+    const pawaPayResponse = await initiatePawaPayPayout({ payoutId, amount: String(Number(amount).toFixed(2)), currency, country: userCountry, correspondent, recipient: { type: "MSISDN", address: { value: e164Phone } }, statementDescription: "LTC Fast Track withdrawal", clientReferenceId: userId });
     if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Withdrawal rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
     const txn = await createTransaction(userId, payoutId, -Number(amount), "withdrawal", correspondent, e164Phone);
     await updateWalletBalance(userId, -Number(amount));
