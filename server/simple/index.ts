@@ -285,11 +285,12 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
     const e164Phone = toE164(countryCode, phoneNumber);
     const correspondent = detectNetwork(countryCode, phoneNumber);
     const currency = currencyForCountry(countryCode);
+    const depoitId = uuidv4();
     const depositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     const pawaPayResponse = await initiatePawaPayDeposit({ depositId, payer: { type: "MMO", accountDetails: { phoneNumber: e164Phone, provider: correspondent } }, amount: String(Number(amount).toFixed(2)), currency, clientReferenceId: user.id, customerMessage: "LTC Fast Track payment" });
     if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Payment rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
     const transaction = await createTransaction(user.id, depositId, Number(amount), "deposit", correspondent, e164Phone);
-    return res.status(201).json({ success: true, data: { depositId, status: pawaPayResponse.status, amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, userId: user.id, transactionId: transaction.id, createdAt: pawaPayResponse.created ?? new Date().toISOString() }, timestamp: new Date().toISOString() });
+    return res.status(201).json({ success: true, data: { depositId: displayDepositId, providerDepositId: depositId, status: pawaPayResponse.status, amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, userId: user.id, transactionId: transaction.id, createdAt: pawaPayResponse.created ?? new Date().toISOString() }, timestamp: new Date().toISOString() });
   } catch (error: any) {
     const msg = axios.isAxiosError(error) ? error.message : (error instanceof Error ? error.message : "Internal server error");
     return res.status(500).json({ success: false, message: msg, errorCode: "PAWAPAY_ERROR", details: axios.isAxiosError(error) ? error.response?.data : null });
@@ -396,6 +397,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
     const linked = await getLinkedAccount(userId);
     if (!linked) return res.status(400).json({ success: false, message: "No linked account found" });
     if (linked.withdrawalPin !== withdrawalPin) return res.status(400).json({ success: false, message: "Invalid withdrawal PIN" });
+    const payoutId = uuidv4();
     const payoutId = `LTC-WD-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     const userCountry = user.country ?? "ZMB";
     const e164Phone = toE164(userCountry, linked.phoneNumber);
@@ -406,7 +408,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
     const txn = await createTransaction(userId, payoutId, -Number(amount), "withdrawal", correspondent, e164Phone);
     await updateWalletBalance(userId, -Number(amount));
     await updateTransactionStatus(payoutId, "processing");
-    return res.json({ success: true, data: { withdrawalId: payoutId, transactionId: txn.id, status: "PROCESSING", amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, createdAt: pawaPayResponse.created ?? new Date().toISOString() } });
+    return res.json({ success: true, data: { withdrawalId: displayWithdrawalId, providerWithdrawalId: payoutId, transactionId: txn.id, status: "PROCESSING", amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, createdAt: pawaPayResponse.created ?? new Date().toISOString() } });
   } catch (error: any) {
     if (axios.isAxiosError(error)) return res.status(400).json({ success: false, message: "PawaPay error", details: error.response?.data });
     return res.status(500).json({ success: false, message: "Internal server error" });
