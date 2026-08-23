@@ -99,6 +99,812 @@ async function initDB(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_ltc_pck_uid    ON ltc_pickups("userId");
       CREATE INDEX IF NOT EXISTS idx_ltc_pck_status ON ltc_pickups(status);
     `);
+      // ============================================================
+      // LTC FAST TRACK — EXISTING OPERATIONAL TABLES
+      // These tables already exist in Railway PostgreSQL.
+      // Do NOT modify the existing ltc_* tables above.
+      // ============================================================
+
+      // ---------- ENUM TYPES ----------
+      await client.query(`
+        DO $$ BEGIN
+          CREATE TYPE role AS ENUM ('user','admin','driver','carrier');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE vehicle_type AS ENUM ('motorbike','van','pickup','truck','trailer');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE pickup_status AS ENUM ('pending','assigned','accepted','in_progress','completed','cancelled');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE document_type AS ENUM ('drivers_license','nrc_id','passport','vehicle_photo');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE transport_status AS ENUM ('pending','accepted','arrived','picked_up','in_transit','delivered','completed','cancelled','rejected');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE wallet_txn_type AS ENUM ('earning','withdrawal','bonus','deduction','refund');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE withdrawal_method AS ENUM ('mobile_money','bank_transfer');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE withdrawal_status AS ENUM ('pending','processing','completed','failed','cancelled');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE dispute_status AS ENUM ('open','investigating','resolved','closed');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE booking_status AS ENUM ('pending','accepted','in-progress','completed','rejected','cancelled');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE zone_status AS ENUM ('active','inactive');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE customer_txn_type AS ENUM ('recharge','withdrawal','referral','payment');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE customer_txn_status AS ENUM ('completed','pending','failed');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE provider_enum AS ENUM ('mtn_momo','airtel_money','zamtel_money');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE provider_role AS ENUM ('zone_manager','carrier_driver');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE payment_method AS ENUM ('mtn_momo','airtel_money','zamtel_money','bank_transfer','manual');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE payment_status AS ENUM ('pending','processing','completed','released','failed','refunded','cancelled');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE notification_type AS ENUM ('pickup_update','driver_accepted','driver_arriving','pickup_completed','payment','subscription','system','support');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE geometry_type AS ENUM ('polygon','circle','point');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        DO $$ BEGIN
+          CREATE TYPE audit_action AS ENUM ('created','modified','deleted','boundary_updated','name_detected','auto_assigned_manager');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      `);
+
+      // ============================================================
+      // 1. USERS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "openId" VARCHAR(64) NOT NULL UNIQUE,
+          name TEXT,
+          email VARCHAR(320),
+          phone VARCHAR(20),
+          "loginMethod" VARCHAR(64),
+          role role NOT NULL DEFAULT 'user',
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "lastSignedIn" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS users_openId_idx
+        ON users ("openId");
+      `);
+
+      // ============================================================
+      // 2. DRIVER PROFILES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_profiles (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id),
+          "fullName" VARCHAR(255) NOT NULL,
+          phone VARCHAR(20) NOT NULL,
+          email VARCHAR(320),
+          "vehicleType" vehicle_type NOT NULL,
+          "plateNumber" VARCHAR(50) NOT NULL,
+          "isOnline" BOOLEAN NOT NULL DEFAULT FALSE,
+          "isApproved" BOOLEAN NOT NULL DEFAULT FALSE,
+          "isSuspended" BOOLEAN NOT NULL DEFAULT FALSE,
+          "averageRating" NUMERIC(3,2) DEFAULT '0.00',
+          "totalRatings" INTEGER DEFAULT 0,
+          "totalCompletedJobs" INTEGER DEFAULT 0,
+          "commissionRate" NUMERIC(5,2) DEFAULT '10.00',
+          "approvedAt" TIMESTAMP,
+          "suspendedAt" TIMESTAMP,
+          "suspensionReason" TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 3. DRIVER DOCUMENTS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_documents (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "documentType" document_type NOT NULL,
+          "fileUrl" TEXT NOT NULL,
+          "fileName" VARCHAR(255),
+          "isVerified" BOOLEAN NOT NULL DEFAULT FALSE,
+          "verifiedAt" TIMESTAMP,
+          "verifiedBy" INTEGER REFERENCES users(id),
+          "rejectionReason" TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+       // ============================================================
+       // LINKED ACCOUNTS
+       // ============================================================
+
+       await client.query(`
+         CREATE TABLE IF NOT EXISTS linked_accounts (
+           id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+           "userId" INTEGER NOT NULL REFERENCES users(id),
+           "phoneNumber" VARCHAR(20) NOT NULL,
+           provider provider_enum NOT NULL,
+           "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+           "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+           "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+         );
+      `);
+
+      // ============================================================
+      // 4. TRANSPORT JOBS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS transport_jobs (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "customerId" INTEGER NOT NULL REFERENCES users(id),
+          "driverId" INTEGER REFERENCES driver_profiles(id),
+          "customerName" VARCHAR(255) NOT NULL,
+          "customerPhone" VARCHAR(20) NOT NULL,
+          "pickupLocation" TEXT NOT NULL,
+          "pickupLatitude" NUMERIC(10,8),
+          "pickupLongitude" NUMERIC(11,8),
+          "dropoffLocation" TEXT NOT NULL,
+          "dropoffLatitude" NUMERIC(10,8),
+          "dropoffLongitude" NUMERIC(11,8),
+          distance NUMERIC(10,2),
+          "cargoType" VARCHAR(255),
+          "cargoDescription" TEXT,
+          "cargoWeight" VARCHAR(100),
+          "vehicleRequired" vehicle_type,
+          "estimatedPrice" NUMERIC(10,2),
+          "finalPrice" NUMERIC(10,2),
+          "commissionAmount" NUMERIC(10,2),
+          "driverEarnings" NUMERIC(10,2),
+          status transport_status NOT NULL DEFAULT 'pending',
+          "scheduledTime" TIMESTAMP,
+          "acceptedAt" TIMESTAMP,
+          "arrivedAt" TIMESTAMP,
+          "pickedUpAt" TIMESTAMP,
+          "deliveredAt" TIMESTAMP,
+          "completedAt" TIMESTAMP,
+          "cancelledAt" TIMESTAMP,
+          "cancellationReason" TEXT,
+          notes TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 5. DRIVER WALLETS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_wallets (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL UNIQUE REFERENCES driver_profiles(id),
+          balance NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "totalEarnings" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "totalWithdrawn" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "pendingWithdrawal" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 6. WALLET TRANSACTIONS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS wallet_transactions (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "jobId" INTEGER REFERENCES transport_jobs(id),
+          type wallet_txn_type NOT NULL,
+          amount NUMERIC(10,2) NOT NULL,
+          "balanceAfter" NUMERIC(12,2) NOT NULL,
+          description TEXT,
+          reference VARCHAR(100),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 7. DRIVER WITHDRAWALS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_withdrawals (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          amount NUMERIC(10,2) NOT NULL,
+          "withdrawalMethod" withdrawal_method NOT NULL,
+          "accountNumber" VARCHAR(100) NOT NULL,
+          "accountName" VARCHAR(255),
+          "bankName" VARCHAR(255),
+          "mobileProvider" VARCHAR(100),
+          status withdrawal_status NOT NULL DEFAULT 'pending',
+          "processedAt" TIMESTAMP,
+          "processedBy" INTEGER REFERENCES users(id),
+          "failureReason" TEXT,
+          "transactionReference" VARCHAR(100),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 8. DRIVER RATINGS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_ratings (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "customerId" INTEGER NOT NULL REFERENCES users(id),
+          "jobId" INTEGER NOT NULL REFERENCES transport_jobs(id),
+          rating INTEGER NOT NULL,
+          review TEXT,
+          "isPublic" BOOLEAN NOT NULL DEFAULT TRUE,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 9. DRIVER ACTIVITY LOG
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_activity_log (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "activityType" VARCHAR(100) NOT NULL,
+          "jobId" INTEGER,
+          details TEXT,
+          "ipAddress" VARCHAR(45),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 10. ADMIN SETTINGS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS admin_settings (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "settingKey" VARCHAR(100) NOT NULL UNIQUE,
+          "settingValue" TEXT NOT NULL,
+          description TEXT,
+          "updatedBy" INTEGER REFERENCES users(id),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 11. DISPUTES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS disputes (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "jobId" INTEGER NOT NULL REFERENCES transport_jobs(id),
+          "reportedBy" INTEGER NOT NULL REFERENCES users(id),
+          "reportedAgainst" INTEGER NOT NULL REFERENCES users(id),
+          "reporterType" VARCHAR(50) NOT NULL,
+          reason TEXT NOT NULL,
+          status dispute_status NOT NULL DEFAULT 'open',
+          resolution TEXT,
+          "resolvedBy" INTEGER REFERENCES users(id),
+          "resolvedAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 12. BOOKINGS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS bookings (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "customerId" INTEGER NOT NULL REFERENCES users(id),
+          "driverId" INTEGER REFERENCES driver_profiles(id),
+          "customerName" VARCHAR(255) NOT NULL,
+          "customerPhone" VARCHAR(20) NOT NULL,
+          "pickupLocation" TEXT NOT NULL,
+          "dropoffLocation" TEXT NOT NULL,
+          "cargoType" VARCHAR(255),
+          "cargoWeight" VARCHAR(100),
+          "estimatedPrice" NUMERIC(10,2),
+          status booking_status NOT NULL DEFAULT 'pending',
+          "vehicleRequired" VARCHAR(255),
+          "scheduledTime" TIMESTAMP,
+          "completedAt" TIMESTAMP,
+          notes TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 13. VEHICLES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS vehicles (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "vehicleType" VARCHAR(255) NOT NULL,
+          "plateNumber" VARCHAR(50) NOT NULL,
+          capacity VARCHAR(100),
+          "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 14. ZONES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zones (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          name VARCHAR(255) NOT NULL,
+          city VARCHAR(100) NOT NULL,
+          description TEXT,
+          boundaries TEXT,
+          status zone_status NOT NULL DEFAULT 'active',
+          "householdCount" INTEGER NOT NULL DEFAULT 0,
+          "collectorCount" INTEGER NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 15. ZONE COLLECTORS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_collectors (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          "collectorId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "assignedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 16. CUSTOMER WALLETS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS customer_wallets (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL REFERENCES users(id),
+          "totalBalance" NUMERIC(10,2) NOT NULL DEFAULT '0.00',
+          "rechargedBalance" NUMERIC(10,2) NOT NULL DEFAULT '0.00',
+          "referralBalance" NUMERIC(10,2) NOT NULL DEFAULT '0.00',
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 17. CUSTOMER WALLET TRANSACTIONS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL REFERENCES users(id),
+          type customer_txn_type NOT NULL,
+          amount NUMERIC(10,2) NOT NULL,
+          status customer_txn_status NOT NULL DEFAULT 'pending',
+          description TEXT,
+          "referenceId" VARCHAR(255),
+          "bankDetails" TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 18. PAYMENT TRANSACTIONS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS payment_transactions (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "payerId" INTEGER NOT NULL REFERENCES users(id),
+          "providerId" INTEGER NOT NULL REFERENCES users(id),
+          "providerRole" provider_role NOT NULL,
+          "serviceType" VARCHAR(50) NOT NULL,
+          "serviceReferenceId" INTEGER,
+          "amountTotal" NUMERIC(12,2) NOT NULL,
+          "platformCommission" NUMERIC(12,2) NOT NULL,
+          "providerAmount" NUMERIC(12,2) NOT NULL,
+          "commissionAmount" NUMERIC(12,2),
+          "platformAmount" NUMERIC(12,2),
+          "transactionSource" VARCHAR(50),
+          "appliedCommissionRate" NUMERIC(5,4),
+          "paymentMethod" payment_method NOT NULL DEFAULT 'manual',
+          "referenceId" VARCHAR(128) UNIQUE,
+          "callbackPayload" TEXT,
+          status payment_status NOT NULL DEFAULT 'pending',
+          "withdrawalRequestedAt" TIMESTAMP,
+          "withdrawalCompletedAt" TIMESTAMP,
+          "withdrawalReference" VARCHAR(128),
+          notes TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+       // ============================================================
+       // TRANSACTIONS
+       // ============================================================
+
+       await client.query(`
+         CREATE TABLE IF NOT EXISTS transactions (
+           id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+           "userId" INTEGER NOT NULL REFERENCES users(id),
+           amount NUMERIC(12,2) NOT NULL,
+           type VARCHAR(50) NOT NULL,
+           status VARCHAR(50) NOT NULL DEFAULT 'pending',
+           provider VARCHAR(100),
+           "referenceId" VARCHAR(128),
+           description TEXT,
+           "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+           "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+         );
+      `);
+
+      // ============================================================
+      // 19. PLATFORM WALLET
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS platform_wallet (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "totalCommissionEarned" NUMERIC(14,2) NOT NULL DEFAULT '0.00',
+          "availableBalance" NUMERIC(14,2) NOT NULL DEFAULT '0.00',
+          "totalWithdrawn" NUMERIC(14,2) NOT NULL DEFAULT '0.00',
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 20. PROVIDER WALLETS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS provider_wallets (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "providerId" INTEGER NOT NULL UNIQUE REFERENCES users(id),
+          "providerRole" provider_role NOT NULL,
+          "availableBalance" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "totalEarned" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "totalWithdrawn" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "pendingBalance" NUMERIC(12,2) NOT NULL DEFAULT '0.00',
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 21. WITHDRAWAL REQUESTS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS withdrawal_requests (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "providerId" INTEGER NOT NULL,
+          "providerRole" provider_role NOT NULL,
+          amount NUMERIC(12,2) NOT NULL,
+          "withdrawalMethod" payment_method NOT NULL,
+          "accountNumber" VARCHAR(64) NOT NULL,
+          "accountName" VARCHAR(255),
+          status withdrawal_status NOT NULL DEFAULT 'pending',
+          "reviewedBy" VARCHAR(128),
+          "reviewedAt" TIMESTAMP,
+          "adminNotes" TEXT,
+          "withdrawalReference" VARCHAR(128),
+          "mtnDisbursementAccepted" BOOLEAN DEFAULT FALSE,
+          "requestedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "completedAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 22. COMMISSION RULES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS commission_rules (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "serviceType" VARCHAR(50) NOT NULL UNIQUE,
+          rate NUMERIC(5,4) NOT NULL DEFAULT '0.1000',
+          "isActive" BOOLEAN NOT NULL DEFAULT TRUE,
+          description TEXT,
+          "createdBy" VARCHAR(128) NOT NULL DEFAULT 'system',
+          "updatedBy" VARCHAR(128) NOT NULL DEFAULT 'system',
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 23. COMMISSION AUDIT LOG
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS commission_audit_log (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "serviceType" VARCHAR(50) NOT NULL,
+          "oldRate" NUMERIC(5,4) NOT NULL,
+          "newRate" NUMERIC(5,4) NOT NULL,
+          "changedBy" VARCHAR(128) NOT NULL,
+          reason TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 24. DRIVER STATUS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS driver_status (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "driverId" INTEGER NOT NULL UNIQUE REFERENCES driver_profiles(id),
+          "driverName" VARCHAR(255),
+          "zoneId" INTEGER REFERENCES zones(id),
+          latitude NUMERIC(10,8) NOT NULL,
+          longitude NUMERIC(11,8) NOT NULL,
+          "isOnline" BOOLEAN NOT NULL DEFAULT FALSE,
+          "activePickupId" VARCHAR(128),
+          "headingDegrees" NUMERIC(6,2),
+          "speedKmh" NUMERIC(6,2),
+          "lastUpdated" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 25. USER NOTIFICATIONS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS user_notifications (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL REFERENCES users(id),
+          type notification_type NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          body TEXT NOT NULL,
+          "isRead" BOOLEAN NOT NULL DEFAULT FALSE,
+          data TEXT,
+          "pickupId" VARCHAR(128),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 26. ZONE MANAGERS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_managers (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id),
+          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          status zone_status NOT NULL DEFAULT 'active',
+          "commissionRate" NUMERIC(5,2) NOT NULL DEFAULT '10.00',
+          "assignedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "unassignedAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 27. ZONE MANAGER DRIVERS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_manager_drivers (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "zoneManagerId" INTEGER NOT NULL REFERENCES zone_managers(id),
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          status zone_status NOT NULL DEFAULT 'active',
+          "assignedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "unassignedAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 28. CUSTOMER ZONE ASSIGNMENTS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS customer_zone_assignments (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id),
+          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          address TEXT NOT NULL,
+          latitude NUMERIC(10,8) NOT NULL,
+          longitude NUMERIC(11,8) NOT NULL,
+          "assignedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 29. GARBAGE PICKUPS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS garbage_pickups (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "customerId" INTEGER NOT NULL REFERENCES users(id),
+          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          "zoneManagerId" INTEGER REFERENCES zone_managers(id),
+          "driverId" INTEGER REFERENCES driver_profiles(id),
+          address TEXT NOT NULL,
+          latitude NUMERIC(10,8) NOT NULL,
+          longitude NUMERIC(11,8) NOT NULL,
+          status pickup_status NOT NULL DEFAULT 'pending',
+          notes TEXT,
+          "scheduledTime" TIMESTAMP,
+          "acceptedAt" TIMESTAMP,
+          "assignedAt" TIMESTAMP,
+          "arrivedAt" TIMESTAMP,
+          "completedAt" TIMESTAMP,
+          "cancelledAt" TIMESTAMP,
+          "cancellationReason" TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 30. PICKUP ASSIGNMENTS
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS pickup_assignments (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "pickupId" INTEGER NOT NULL REFERENCES garbage_pickups(id),
+          "driverId" INTEGER NOT NULL REFERENCES driver_profiles(id),
+          "assignedBy" INTEGER REFERENCES zone_managers(id),
+          status pickup_status NOT NULL DEFAULT 'pending',
+          "acceptedAt" TIMESTAMP,
+          "assignedAt" TIMESTAMP,
+          "completedAt" TIMESTAMP,
+          "cancelledAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 31. ZONE GEOMETRIES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_geometries (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "zoneId" INTEGER NOT NULL UNIQUE REFERENCES zones(id),
+          "geometryType" geometry_type NOT NULL DEFAULT 'polygon',
+          coordinates TEXT NOT NULL,
+          "centerLat" NUMERIC(10,8),
+          "centerLng" NUMERIC(11,8),
+          "radiusMeters" INTEGER,
+          "createdBy" INTEGER NOT NULL REFERENCES users(id),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 32. ZONE ADMIN PROFILES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_admin_profiles (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id),
+          "fullName" VARCHAR(255) NOT NULL,
+          phone VARCHAR(20) NOT NULL,
+          email VARCHAR(320),
+          "isApproved" BOOLEAN NOT NULL DEFAULT FALSE,
+          "approvedAt" TIMESTAMP,
+          "approvedBy" INTEGER REFERENCES users(id),
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 33. ZONE ADMIN ZONES
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_admin_zones (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "zoneAdminId" INTEGER NOT NULL REFERENCES zone_admin_profiles(id),
+          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          "createdBy" INTEGER NOT NULL REFERENCES users(id),
+          "assignedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      // ============================================================
+      // 34. ZONE AUDIT LOG
+      // ============================================================
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS zone_audit_log (
+          id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          action audit_action NOT NULL,
+          "createdBy" INTEGER NOT NULL REFERENCES users(id),
+          details TEXT,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      log("INFO", "Operational Railway tables initialized");
     log("INFO", "Database initialized successfully");
   } finally { client.release(); }
 }
@@ -428,16 +1234,241 @@ app.get("/api/pickups", async (req: Request, res: Response) => {
 });
 
 app.post("/api/pickups", async (req: Request, res: Response) => {
+  const client = await pool.connect();
+
   try {
-    const { userId, userName, userPhone, location, latitude, longitude, wasteType, notes, zoneId, scheduledDate, scheduledTime } = req.body;
-    if (!userId) return res.status(400).json({ success: false, message: "userId is required" });
-    const id = `pickup_${uuidv4().replace(/-/g, "").substring(0, 16)}`;
+    const {
+      userId,
+      userName,
+      userPhone,
+      location,
+      latitude,
+      longitude,
+      wasteType,
+      notes,
+      zoneId,
+      scheduledDate,
+      scheduledTime,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "userId is required",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    // ------------------------------------------------------------
+    // 1. Get the existing LTC customer
+    // ------------------------------------------------------------
+    const ltcUserResult = await client.query<User>(
+      `SELECT * FROM ltc_users WHERE id = $1`,
+      [userId]
+    );
+
+    if (!ltcUserResult.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        success: false,
+        message: "LTC user not found",
+      });
+    }
+
+    const ltcUser = ltcUserResult.rows[0];
+
+    // ------------------------------------------------------------
+    // 2. Find or create the operational users record
+    // ------------------------------------------------------------
+    const openId = `ltc_${userId}`;
+
+    let operationalUser = await client.query(
+      `SELECT id FROM users WHERE "openId" = $1`,
+      [openId]
+    );
+
+    let operationalUserId: number;
+
+    if (operationalUser.rows[0]) {
+      operationalUserId = operationalUser.rows[0].id;
+    } else {
+      const newUser = await client.query(
+        `
+        INSERT INTO users
+          ("openId", name, phone, role)
+        VALUES
+          ($1, $2, $3, 'user')
+        RETURNING id
+        `,
+        [
+          openId,
+          userName ?? ltcUser.phoneNumber,
+          userPhone ?? ltcUser.phoneNumber,
+        ]
+      );
+
+      operationalUserId = newUser.rows[0].id;
+    }
+
+    // ------------------------------------------------------------
+    // 3. Resolve the zone
+    // ------------------------------------------------------------
+    let operationalZoneId: number | null = null;
+
+    if (zoneId) {
+      const zoneResult = await client.query(
+        `SELECT id FROM zones WHERE id::text = $1 OR name = $1 LIMIT 1`,
+        [String(zoneId)]
+      );
+
+      if (zoneResult.rows[0]) {
+        operationalZoneId = zoneResult.rows[0].id;
+      }
+    }
+
+    // If no valid zone was supplied, find the first active zone.
+    if (!operationalZoneId) {
+      const defaultZone = await client.query(
+        `
+        SELECT id
+        FROM zones
+        WHERE status = 'active'
+        ORDER BY id
+        LIMIT 1
+        `
+      );
+
+      if (defaultZone.rows[0]) {
+        operationalZoneId = defaultZone.rows[0].id;
+      }
+    }
+
+    if (!operationalZoneId) {
+      await client.query("ROLLBACK");
+
+      return res.status(400).json({
+        success: false,
+        message: "No active zone is available for this pickup",
+      });
+    }
+
+    // ------------------------------------------------------------
+    // 4. Create the existing LTC pickup
+    // ------------------------------------------------------------
+    const ltcPickupId = `pickup_${uuidv4().replace(/-/g, "").substring(0, 16)}`;
     const n = now();
-    await pool.query(`INSERT INTO ltc_pickups (id,"userId","userName","userPhone",location,latitude,longitude,"wasteType",notes,status,"zoneId","scheduledDate","scheduledTime","createdAt","updatedAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14)`,
-      [id, userId, userName ?? null, userPhone ?? null, location ?? null, latitude ?? null, longitude ?? null, wasteType ?? "residential", notes ?? null, zoneId ?? null, scheduledDate ?? null, scheduledTime ?? null, n, n]);
-    const result = await pool.query<Pickup>(`SELECT * FROM ltc_pickups WHERE id = $1`, [id]);
-    return res.status(201).json(result.rows[0]);
-  } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Internal server error" }); }
+
+    await client.query(
+      `
+      INSERT INTO ltc_pickups
+        (
+          id,
+          "userId",
+          "userName",
+          "userPhone",
+          location,
+          latitude,
+          longitude,
+          "wasteType",
+          notes,
+          status,
+          "zoneId",
+          "scheduledDate",
+          "scheduledTime",
+          "createdAt",
+          "updatedAt"
+        )
+      VALUES
+        (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,
+          'pending',$10,$11,$12,$13,$14
+        )
+      `,
+      [
+        ltcPickupId,
+        userId,
+        userName ?? null,
+        userPhone ?? null,
+        location ?? null,
+        latitude ?? null,
+        longitude ?? null,
+        wasteType ?? "residential",
+        notes ?? null,
+        zoneId ?? String(operationalZoneId),
+        scheduledDate ?? null,
+        scheduledTime ?? null,
+        n,
+        n,
+      ]
+    );
+
+    // ------------------------------------------------------------
+    // 5. Create the operational admin pickup
+    // ------------------------------------------------------------
+    const scheduledTimeValue =
+      scheduledDate && scheduledTime
+        ? `${scheduledDate} ${scheduledTime}`
+        : null;
+
+    const garbagePickup = await client.query(
+      `
+      INSERT INTO garbage_pickups
+        (
+          "customerId",
+          "zoneId",
+          address,
+          latitude,
+          longitude,
+          status,
+          notes,
+          "scheduledTime"
+        )
+      VALUES
+        (
+          $1,$2,$3,$4,$5,'pending',$6,$7
+        )
+      RETURNING *
+      `,
+      [
+        operationalUserId,
+        operationalZoneId,
+        location ?? "Location not provided",
+        Number(latitude ?? 0),
+        Number(longitude ?? 0),
+        notes ?? null,
+        scheduledTimeValue,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+  return res.status(201).json({
+  success: true,
+  data: {
+    ltcPickupId,
+    garbagePickupId: garbagePickup.rows[0].id,
+    operationalUserId,
+    zoneId: operationalZoneId,
+    status: "pending",
+  },
+});
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    console.error("[PICKUP CREATE ERROR]", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Internal server error",
+    });
+  } finally {
+    client.release();
+  }
 });
 
 app.get("/api/pickups/:id", async (req: Request, res: Response) => {
