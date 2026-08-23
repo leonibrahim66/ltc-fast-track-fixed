@@ -1250,6 +1250,10 @@ app.post("/api/pickups", async (req: Request, res: Response) => {
       scheduledDate,
       scheduledTime,
     } = req.body;
+    console.log("[PICKUP REQUEST]", {
+      userId,
+      userPhone,
+    });
 
     if (!userId) {
       return res.status(400).json({
