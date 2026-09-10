@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import {
   Text,
   View,
@@ -8,11 +7,10 @@ import {
   ActivityIndicator,
   TextInput,
   Image,
-  Platform,
   ScrollView,
-  Modal,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useState, useEffect, useCallback } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAuth } from "@/lib/auth-context";
 import { usePickups } from "@/lib/pickups-context";
@@ -21,7 +19,6 @@ import { useITRealtime } from "@/lib/it-realtime-context";
 import { useAdmin } from "@/lib/admin-context";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
-import { APP_CONFIG } from "@/constants/app";
 
 import { getStaticResponsive } from "@/hooks/use-responsive";
 import { sendNotification } from "@/lib/send-notification";
@@ -38,7 +35,7 @@ const TIME_SLOTS = [
 
 export default function RequestPickupScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { createPickup } = usePickups();
   const { addLivePickup, addEvent } = useITRealtime();
   const { addNotification } = useAdmin();
@@ -56,20 +53,13 @@ export default function RequestPickupScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [isRefreshingUser, setIsRefreshingUser] = useState(true);
+  const isSubmitDisabled = isLoading || isLoadingLocation;
 
   // Scheduling states
   const [pickupType, setPickupType] = useState<PickupType>("immediate");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-
-  // Check if user has active subscription
-  // NOTE: When APP_CONFIG.requireSubscriptionForPickup = false (dev mode),
-  // customers can request pickups without a subscription.
-  const hasActiveSubscription =
-    !APP_CONFIG.requireSubscriptionForPickup ||
-    (user?.subscription != null &&
-      new Date(user.subscription.expiresAt) > new Date());
 
   // Default to Lusaka, Zambia
   const defaultRegion = {
@@ -89,6 +79,30 @@ export default function RequestPickupScreen() {
   useEffect(() => {
     getCurrentLocation();
   }, []);
+
+useFocusEffect(
+  useCallback(() => {
+    let isActive = true;
+
+    const loadLatestUser = async () => {
+      setIsRefreshingUser(true);
+
+      try {
+        await refreshUser();
+      } finally {
+        if (isActive) {
+          setIsRefreshingUser(false);
+        }
+      }
+    };
+
+    loadLatestUser();
+
+    return () => {
+      isActive = false;
+    };
+  }, [refreshUser])
+);
 
   const getCurrentLocation = async () => {
     try {
@@ -186,227 +200,182 @@ export default function RequestPickupScreen() {
   };
 
   const handleSubmit = async () => {
-    // Check subscription before allowing pickup request
-    if (!hasActiveSubscription) {
-      Alert.alert(
-        "Subscription Required",
-        "You need an active subscription to request garbage pickups. Subscribe now to start using our services!",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Subscribe Now", onPress: () => router.push("/subscription-plans" as any) },
-        ]
-      );
-      return;
-    }
+  setIsLoading(true);
 
-    if (!location) {
-      Alert.alert("Error", "Please wait for location to be detected or enter manually");
-      return;
-    }
+  try {
+    // Load the latest customer record before creating the pickup request.
+const latestUser = await refreshUser();
 
-    if (!user) {
+    if (!latestUser) {
       Alert.alert("Error", "Please login to request a pickup");
       return;
     }
 
-    // Validate scheduling if scheduled pickup
+    if (!location) {
+      Alert.alert(
+        "Error",
+        "Please wait for location to be detected or enter manually"
+      );
+      return;
+    }
+
     if (pickupType === "scheduled") {
       if (!selectedDate) {
         Alert.alert("Error", "Please select a date for your scheduled pickup");
         return;
       }
+
       if (!selectedTimeSlot) {
-        Alert.alert("Error", "Please select a time slot for your scheduled pickup");
+        Alert.alert(
+          "Error",
+          "Please select a time slot for your scheduled pickup"
+        );
         return;
       }
     }
 
-    setIsLoading(true);
-    try {
-      // Resolve the customer's zone — prefer assignedZoneId, fall back to zoneId
-      const customerZoneId = user.assignedZoneId || user.zoneId || undefined;
+    const customerZoneId =
+      latestUser.assignedZoneId || latestUser.zoneId || undefined;
 
-      const pickupData: any = {
-        userId: user.id,
-        userPhone: user.phone,
-        userName: user.fullName,
-        location: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          address: address || undefined,
-        },
-        binType,
-        photoUri: photoUri || undefined,
-        notes: notes || undefined,
-        // Zone relationship: routes this pickup to the correct zone manager
-        zoneId: customerZoneId,
-      };
+    const pickupData: any = {
+      userId: latestUser.id,
+      userPhone: latestUser.phone,
+      userName: latestUser.fullName,
+      location: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: address || undefined,
+      },
+      binType,
+      photoUri: photoUri || undefined,
+      notes: notes || undefined,
+      zoneId: customerZoneId,
+    };
 
-      // Add scheduling info if scheduled
-      if (pickupType === "scheduled" && selectedDate && selectedTimeSlot) {
-        pickupData.scheduledDate = selectedDate.toISOString();
-        pickupData.scheduledTime = selectedTimeSlot;
-      }
+    if (pickupType === "scheduled" && selectedDate && selectedTimeSlot) {
+      pickupData.scheduledDate = selectedDate.toISOString();
+      pickupData.scheduledTime = selectedTimeSlot;
+    }
 
-      // POST to live backend API via PickupsContext (no AsyncStorage)
-      const createdPickup = await createPickup(pickupData);
+    const createdPickup = await createPickup(pickupData);
 
-      // Fix 2: Emit live pickup event to admin live screens
-      addLivePickup({
-        customerId: user.id,
-        customerName: user.fullName || user.phone,
-        location: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          address: address || "Location pinned",
-        },
-        binType,
-        status: "pending",
-      });
-      addEvent({
-        type: "pickup_pinned",
-        title: "New Pickup Request",
-        description: `${user.fullName || user.phone} requested ${binType} pickup`,
-        data: { userName: user.fullName || user.phone, location: address || "Location pinned" },
-        priority: "high",
-      });
-      addNotification({
-        type: "system",
-        title: "New Pickup Request",
-        message: `${user.fullName || user.phone} requested a ${binType} pickup`,
-      });
+    addLivePickup({
+      customerId: latestUser.id,
+      customerName: latestUser.fullName || latestUser.phone,
+      location: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: address || "Location pinned",
+      },
+      binType,
+      status: "pending",
+    });
 
-      // Notify the customer that their request was received
-      sendNotification({
-        userId: user.id,
-        type: "pickup_update",
-        title: "Pickup Request Submitted",
-        body: pickupType === "scheduled"
-          ? `Your scheduled pickup has been submitted. A collector will be assigned soon.`
+    addEvent({
+      type: "pickup_pinned",
+      title: "New Pickup Request",
+      description: `${latestUser.fullName || latestUser.phone} requested ${binType} pickup`,
+      data: {
+        userName: latestUser.fullName || latestUser.phone,
+        location: address || "Location pinned",
+      },
+      priority: "high",
+    });
+
+    addNotification({
+      type: "system",
+      title: "New Pickup Request",
+      message: `${latestUser.fullName || latestUser.phone} requested a ${binType} pickup`,
+    });
+
+    sendNotification({
+      userId: latestUser.id,
+      type: "pickup_update",
+      title: "Pickup Request Submitted",
+      body:
+        pickupType === "scheduled"
+          ? "Your scheduled pickup has been submitted. A collector will be assigned soon."
           : "Your garbage pickup request has been submitted. A collector will be assigned soon.",
+    }).catch(() => {});
+
+    const customerZoneId2 =
+      latestUser.assignedZoneId || latestUser.zoneId;
+
+    if (customerZoneId2) {
+      import("@react-native-async-storage/async-storage")
+        .then(({ default: AS }) => {
+          AS.getItem("@ltc_zone_managers")
+            .then((raw) => {
+              if (!raw) return;
+
+              const managers: any[] = JSON.parse(raw);
+
+              const manager = managers.find(
+                (m: any) =>
+                  m.zoneId === customerZoneId2 ||
+                  m.assignedZoneId === customerZoneId2
+              );
+
+              if (manager?.id) {
+                sendNotification({
+                  userId: manager.id,
+                  type: "pickup_update",
+                  title: "New Pickup Request",
+                  body: `${latestUser.fullName || latestUser.phone} submitted a ${binType} pickup request in your zone.`,
+                }).catch(() => {});
+              }
+            })
+            .catch(() => {});
+        })
+        .catch(() => {});
+
+      notifyNewPickupRequest({
+        pickupId: createdPickup.id,
+        customerName:
+          latestUser.fullName || latestUser.phone || "Customer",
+        address: address || "Location pinned",
+        zoneName: String(customerZoneId2),
       }).catch(() => {});
+    }
 
-      // Notify the zone manager if the customer has an assigned zone
-      const customerZoneId2 = user.assignedZoneId || user.zoneId;
-      if (customerZoneId2) {
-        // Look up the zone manager's userId from AsyncStorage
-        import('@react-native-async-storage/async-storage').then(({ default: AS }) => {
-          AS.getItem('@ltc_zone_managers').then((raw) => {
-            if (!raw) return;
-            const managers: any[] = JSON.parse(raw);
-            const manager = managers.find((m: any) => m.zoneId === customerZoneId2 || m.assignedZoneId === customerZoneId2);
-            if (manager?.id) {
-              sendNotification({
-                userId: manager.id,
-                type: "pickup_update",
-                title: "New Pickup Request",
-                body: `${user.fullName || user.phone} submitted a ${binType} pickup request in your zone.`,
-              }).catch(() => {});
-            }
-          }).catch(() => {});
-        }).catch(() => {});
-        // Also fire native device push notification to zone manager
-        notifyNewPickupRequest({
-          pickupId: createdPickup.id,
-          customerName: user.fullName || user.phone || "Customer",
-          address: address || "Location pinned",
-          zoneName: String(customerZoneId2),
-        }).catch(() => {});
-      }
-
-      const message = pickupType === "scheduled"
-        ? `Your garbage pickup has been scheduled for ${formatDate(selectedDate!)} (${TIME_SLOTS.find(t => t.id === selectedTimeSlot)?.time}). We'll remind you before the pickup.`
+    const message =
+      pickupType === "scheduled"
+        ? `Your garbage pickup has been scheduled for ${formatDate(
+            selectedDate!
+          )} (${
+            TIME_SLOTS.find((t) => t.id === selectedTimeSlot)?.time
+          }). We'll remind you before the pickup.`
         : "Your garbage pickup request has been submitted. A collector will be assigned soon.";
 
-      Alert.alert(
-        pickupType === "scheduled" ? "Pickup Scheduled" : "Pickup Requested",
-        message,
-        [{ text: "OK", onPress: () => router.back() }]
-      );
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Failed to submit pickup request.";
-      Alert.alert("Error", `${msg} Please try again.`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Show subscription required screen for non-subscribers
-  if (!hasActiveSubscription) {
-    return (
-      <ScreenContainer edges={["top", "bottom", "left", "right"]}>
-        <View className="flex-1">
-          {/* Header */}
-          <View className="px-6 pt-4 pb-4 flex-row items-center">
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
-              <MaterialIcons name="arrow-back" size={24} color="#1F2937" />
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-foreground ml-4">
-              Request Pickup
-            </Text>
-          </View>
-
-          {/* Subscription Required Message */}
-          <View className="flex-1 px-6 items-center justify-center">
-            <View className="bg-warning/10 w-24 h-24 rounded-full items-center justify-center mb-6">
-              <MaterialIcons name="lock" size={48} color="#F59E0B" />
-            </View>
-            <Text className="text-2xl font-bold text-foreground text-center mb-3">
-              Subscription Required
-            </Text>
-            <Text className="text-muted text-center mb-8 px-4 leading-6">
-              To request garbage pickups and pin bin locations, you need an active subscription. 
-              Choose a plan that suits your needs and start enjoying our fast and efficient garbage collection services.
-            </Text>
-
-            {/* Benefits */}
-            <View className="bg-surface rounded-2xl p-6 w-full mb-8 border border-border">
-              <Text className="font-semibold text-foreground mb-4">
-                With a subscription you get:
-              </Text>
-              <View className="flex-row items-center mb-3">
-                <MaterialIcons name="check-circle" size={20} color="#22C55E" />
-                <Text className="text-foreground ml-3">Pin bin locations for pickup</Text>
-              </View>
-              <View className="flex-row items-center mb-3">
-                <MaterialIcons name="check-circle" size={20} color="#22C55E" />
-                <Text className="text-foreground ml-3">Track your pickups in real-time</Text>
-              </View>
-              <View className="flex-row items-center mb-3">
-                <MaterialIcons name="check-circle" size={20} color="#22C55E" />
-                <Text className="text-foreground ml-3">Priority customer support</Text>
-              </View>
-              <View className="flex-row items-center">
-                <MaterialIcons name="check-circle" size={20} color="#22C55E" />
-                <Text className="text-foreground ml-3">Scheduled regular pickups</Text>
-              </View>
-            </View>
-
-            {/* Subscribe Button */}
-            <TouchableOpacity
-              onPress={() => router.push("/subscription-plans" as any)}
-              className="bg-primary py-4 px-8 rounded-full w-full"
-              style={styles.button}
-            >
-              <Text className="text-white text-center text-lg font-semibold">
-                View Subscription Plans
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => router.back()}
-              className="mt-4 py-3"
-            >
-              <Text className="text-muted text-center">Maybe Later</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScreenContainer>
+    Alert.alert(
+      pickupType === "scheduled" ? "Pickup Scheduled" : "Pickup Requested",
+      message,
+      [{ text: "OK", onPress: () => router.back() }]
     );
+  } catch (error) {
+    const msg =
+      error instanceof Error
+        ? error.message
+        : "Failed to submit pickup request.";
+
+    Alert.alert("Error", `${msg} Please try again.`);
+  } finally {
+    setIsLoading(false);
   }
+};
+
+if (isRefreshingUser) {
+  return (
+    <ScreenContainer edges={["top", "bottom", "left", "right"]}>
+      <View className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color="#22C55E" />
+        <Text className="text-muted mt-3">
+           Loading your account...
+        </Text>
+      </View>
+    </ScreenContainer>
+  );
+}
 
   return (
     <ScreenContainer edges={["top", "bottom", "left", "right"]}>
@@ -424,33 +393,32 @@ export default function RequestPickupScreen() {
           </Text>
         </View>
 
-        <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
-          {/* Dev Mode Banner — shown when subscription gate is bypassed */}
-          {!APP_CONFIG.requireSubscriptionForPickup && (
-            <View className="mx-6 mb-4 bg-warning/15 rounded-xl p-3 flex-row items-center border border-warning/30">
-              <MaterialIcons name="developer-mode" size={18} color="#F59E0B" />
-              <Text className="text-warning font-medium ml-2 flex-1 text-sm">
-                Development Mode: Subscription pending approval.
-              </Text>
-            </View>
-          )}
-          {/* Subscription Status Banner — shown when subscription is active */}
-          {APP_CONFIG.requireSubscriptionForPickup && user?.subscription && (
-            <View className="mx-6 mb-4 bg-success/10 rounded-xl p-3 flex-row items-center">
-              <MaterialIcons name="verified" size={20} color="#22C55E" />
-              <Text className="text-success font-medium ml-2 flex-1">
-                {user.subscription.planName} Plan Active
-              </Text>
-              <Text className="text-success text-sm">
-                {user.subscription.pickupsRemaining === -1
-                  ? "Unlimited"
-                  : `${user.subscription.pickupsRemaining} pickups left`}
-              </Text>
-            </View>
-          )}
+        <ScrollView
+  className="flex-1"
+  contentContainerStyle={{ paddingBottom: 100 }}
+>
+  {/* Manual Payment Verification Notice */}
+  <View
+    className="mx-6 mb-4 rounded-xl p-4 flex-row items-start"
+    style={{ backgroundColor: "#EFF6FF" }}
+  >
+    <MaterialIcons
+      name="info-outline"
+      size={22}
+      color="#2563EB"
+    />
 
-          {/* Pickup Type Selection */}
-          <View className="px-6 mb-4">
+    <Text
+      className="text-sm ml-3 flex-1"
+      style={{ color: "#1E40AF" }}
+    >
+      You can submit a pickup request without a subscription. Payment details,
+      where applicable, will be manually verified by our administrators.
+    </Text>
+  </View>
+
+  {/* Pickup Type Selection */}
+  <View className="px-6 mb-4">
             <Text className="text-sm font-medium text-foreground mb-2">
               Pickup Type
             </Text>
@@ -753,13 +721,13 @@ export default function RequestPickupScreen() {
           {/* Submit Button */}
           <View className="px-6">
             <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={isLoading || isLoadingLocation}
-              className={`py-4 rounded-full ${
-                !isLoadingLocation ? "bg-primary" : "bg-muted"
-              }`}
-              style={[styles.button, isLoading && styles.buttonDisabled]}
-            >
+  onPress={handleSubmit}
+  disabled={isSubmitDisabled}
+  className={`py-4 rounded-full ${
+    isSubmitDisabled ? "bg-muted" : "bg-primary"
+  }`}
+  style={[styles.button, isSubmitDisabled && styles.buttonDisabled]}
+>
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (

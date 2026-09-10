@@ -66,16 +66,58 @@ interface SubscriptionApprovalContextType {
   pendingRequests: SubscriptionRequest[];
   approvalHistory: ApprovalAction[];
   isLoading: boolean;
-  approveRequest: (requestId: string, adminId: string, adminName: string, adminRole: string, notes?: string) => void;
-  rejectRequest: (requestId: string, adminId: string, adminName: string, reason: string, notes?: string) => void;
-  activateAccount: (requestId: string, adminId: string, adminName: string) => void;
-  getRequestById: (requestId: string) => SubscriptionRequest | undefined;
-  getRequestsByStatus: (status: SubscriptionRequest['status']) => SubscriptionRequest[];
-  /** Returns all requests for a specific userId, sorted newest first */
-  getRequestsByUserId: (userId: string) => SubscriptionRequest[];
-  getApprovalHistory: (requestId?: string) => ApprovalAction[];
-  addSubscriptionRequest: (request: Omit<SubscriptionRequest, 'id' | 'status' | 'requestDate'>) => Promise<string>;
-  getStats: () => { pending: number; approved: number; activated: number; rejected: number };
+
+  approveRequest: (
+    requestId: string,
+    adminId: string,
+    adminName: string,
+    adminRole: string,
+    notes?: string
+  ) => Promise<void>;
+
+  rejectRequest: (
+    requestId: string,
+    adminId: string,
+    adminName: string,
+    reason: string,
+    notes?: string
+  ) => Promise<void>;
+
+  activateAccount: (
+    requestId: string,
+    adminId: string,
+    adminName: string
+  ) => Promise<void>;
+
+  getRequestById: (
+    requestId: string
+  ) => SubscriptionRequest | undefined;
+
+  getRequestsByStatus: (
+    status: SubscriptionRequest['status']
+  ) => SubscriptionRequest[];
+
+  getRequestsByUserId: (
+    userId: string
+  ) => SubscriptionRequest[];
+
+  getApprovalHistory: (
+    requestId?: string
+  ) => ApprovalAction[];
+
+  addSubscriptionRequest: (
+    request: Omit<
+      SubscriptionRequest,
+      'id' | 'status' | 'requestDate'
+    >
+  ) => Promise<string>;
+
+  getStats: () => {
+    pending: number;
+    approved: number;
+    activated: number;
+    rejected: number;
+  };
 }
 
 const SubscriptionApprovalContext = createContext<SubscriptionApprovalContextType | undefined>(undefined);
@@ -232,175 +274,227 @@ export function SubscriptionApprovalProvider({
 
   // ── Actions ──────────────────────────────────────────────────────────────────
 
-  const approveRequest = useCallback((
-    requestId: string,
-    adminId: string,
-    adminName: string,
-    adminRole: string,
-    notes?: string,
-  ) => {
-    let approvedReq: SubscriptionRequest | undefined;
+  const approveRequest = useCallback(async (
+  requestId: string,
+  adminId: string,
+  adminName: string,
+  adminRole: string,
+  notes?: string,
+) => {
+  const currentRequest = pendingRequests.find(req => req.id === requestId);
 
-    setPendingRequests(prev => {
-      const updated = prev.map(req => {
-        if (req.id === requestId) {
-          approvedReq = { ...req, status: 'approved' as const, approvedBy: adminName, approvalDate: new Date().toISOString(), notes };
-          return approvedReq;
-        }
-        return req;
-      });
-      saveRequests(updated);
-      return updated;
+  if (!currentRequest) {
+    throw new Error('Subscription request not found');
+  }
+
+  if (currentRequest.status !== 'pending') {
+    throw new Error('Only pending requests can be approved');
+  }
+
+  const approvedRequest: SubscriptionRequest = {
+    ...currentRequest,
+    status: 'approved',
+    approvedBy: adminName,
+    approvalDate: new Date().toISOString(),
+    notes,
+  };
+
+  const updatedRequests = pendingRequests.map(request =>
+    request.id === requestId ? approvedRequest : request
+  );
+
+  const action: ApprovalAction = {
+    id: `action-${Date.now()}`,
+    requestId,
+    adminId,
+    adminName,
+    adminRole: adminRole as 'superadmin' | 'finance',
+    action: 'approved',
+    timestamp: new Date().toISOString(),
+    notes,
+  };
+
+  const updatedHistory = [...approvalHistory, action];
+
+  setPendingRequests(updatedRequests);
+  setApprovalHistory(updatedHistory);
+
+  await Promise.all([
+    saveRequests(updatedRequests),
+    saveHistory(updatedHistory),
+  ]);
+
+  sendSubscriptionApprovedNotification(
+    approvedRequest.subscriptionPlan,
+    requestId
+  ).catch(() => {});
+
+  sendNotification({
+    userId: approvedRequest.userId,
+    type: 'subscription',
+    title: 'Subscription Approved',
+   body: `Your ${approvedRequest.subscriptionPlan} subscription request has been approved. Your account will be activated after final processing.`,
+  }).catch(() => {});
+}, [
+  pendingRequests,
+  approvalHistory,
+  saveRequests,
+  saveHistory,
+]);
+
+  const rejectRequest = useCallback(async (
+  requestId: string,
+  adminId: string,
+  adminName: string,
+  reason: string,
+  notes?: string,
+) => {
+  const currentRequest = pendingRequests.find(req => req.id === requestId);
+
+  if (!currentRequest) {
+    throw new Error('Subscription request not found');
+  }
+
+  if (currentRequest.status !== 'pending') {
+    throw new Error('Only pending requests can be rejected');
+  }
+
+  const rejectedRequest: SubscriptionRequest = {
+    ...currentRequest,
+    status: 'rejected',
+    rejectionReason: reason,
+    approvalDate: new Date().toISOString(),
+    notes,
+  };
+
+  const updatedRequests = pendingRequests.map(request =>
+    request.id === requestId ? rejectedRequest : request
+  );
+
+  const action: ApprovalAction = {
+    id: `action-${Date.now()}`,
+    requestId,
+    adminId,
+    adminName,
+    adminRole: 'superadmin',
+    action: 'rejected',
+    reason,
+    timestamp: new Date().toISOString(),
+    notes,
+  };
+
+  const updatedHistory = [...approvalHistory, action];
+
+  setPendingRequests(updatedRequests);
+  setApprovalHistory(updatedHistory);
+
+  await Promise.all([
+    saveRequests(updatedRequests),
+    saveHistory(updatedHistory),
+  ]);
+
+  sendSubscriptionRejectedNotification(
+    rejectedRequest.subscriptionPlan,
+    reason,
+    requestId
+  ).catch(() => {});
+
+  sendNotification({
+    userId: rejectedRequest.userId,
+    type: 'subscription',
+    title: 'Subscription Request Rejected',
+    body: `Your ${rejectedRequest.subscriptionPlan} request was rejected. Reason: ${reason}`,
+  }).catch(() => {});
+}, [
+  pendingRequests,
+  approvalHistory,
+  saveRequests,
+  saveHistory,
+]);
+
+  const activateAccount = useCallback(async (
+  requestId: string,
+  adminId: string,
+  adminName: string,
+) => {
+  const currentRequest = pendingRequests.find(req => req.id === requestId);
+
+  if (!currentRequest) {
+    throw new Error('Subscription request not found');
+  }
+
+  if (currentRequest.status !== 'approved') {
+    throw new Error('Only approved requests can be activated');
+  }
+
+  const activatedRequest: SubscriptionRequest = {
+    ...currentRequest,
+    status: 'activated',
+    activationDate: new Date().toISOString(),
+  };
+
+  const updatedRequests = pendingRequests.map(request =>
+    request.id === requestId ? activatedRequest : request
+  );
+
+  const action: ApprovalAction = {
+    id: `action-${Date.now()}`,
+    requestId,
+    adminId,
+    adminName,
+    adminRole: 'superadmin',
+    action: 'activated',
+    timestamp: new Date().toISOString(),
+  };
+
+  const updatedHistory = [...approvalHistory, action];
+
+  setPendingRequests(updatedRequests);
+  setApprovalHistory(updatedHistory);
+
+  await Promise.all([
+    saveRequests(updatedRequests),
+    saveHistory(updatedHistory),
+  ]);
+
+  if (onActivateSubscription) {
+    const expiresAt = new Date(
+      Date.now() + 365 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const pickupsRemaining =
+      activatedRequest.planPrice >= 180 ? -1 : 4;
+
+    await onActivateSubscription(activatedRequest.userId, {
+      planId:
+        activatedRequest.planId ||
+        activatedRequest.subscriptionPlan
+          .toLowerCase()
+          .replace(/\s+/g, '_'),
+      planName: activatedRequest.subscriptionPlan,
+      expiresAt,
+      pickupsRemaining,
     });
+  }
 
-    setApprovalHistory(prev => {
-      const updated = [
-        ...prev,
-        {
-          id: `action-${Date.now()}`,
-          requestId,
-          adminId,
-          adminName,
-          adminRole: adminRole as 'superadmin' | 'finance',
-          action: 'approved' as const,
-          timestamp: new Date().toISOString(),
-          notes,
-        },
-      ];
-      saveHistory(updated);
-      return updated;
-    });
+  sendSubscriptionActivatedNotification(
+    activatedRequest.subscriptionPlan,
+    requestId
+  ).catch(() => {});
 
-    // Fire local notification (non-blocking)
-    if (approvedReq) {
-      sendSubscriptionApprovedNotification(approvedReq.subscriptionPlan, requestId).catch(() => {});
-      // Also send backend notification so the customer sees it in their notification bell
-      sendNotification({
-        userId: approvedReq.userId,
-        type: 'subscription',
-        title: 'Subscription Approved',
-        body: `Your ${approvedReq.subscriptionPlan} subscription has been approved! Your account is now active.`,
-      }).catch(() => {});
-    }
-  }, [saveRequests, saveHistory]);
-
-  const rejectRequest = useCallback((
-    requestId: string,
-    adminId: string,
-    adminName: string,
-    reason: string,
-    notes?: string,
-  ) => {
-    let rejectedReq: SubscriptionRequest | undefined;
-
-    setPendingRequests(prev => {
-      const updated = prev.map(req => {
-        if (req.id === requestId) {
-          rejectedReq = { ...req, status: 'rejected' as const, rejectionReason: reason, approvalDate: new Date().toISOString(), notes };
-          return rejectedReq;
-        }
-        return req;
-      });
-      saveRequests(updated);
-      return updated;
-    });
-
-    setApprovalHistory(prev => {
-      const updated = [
-        ...prev,
-        {
-          id: `action-${Date.now()}`,
-          requestId,
-          adminId,
-          adminName,
-          adminRole: 'superadmin' as const,
-          action: 'rejected' as const,
-          reason,
-          timestamp: new Date().toISOString(),
-          notes,
-        },
-      ];
-      saveHistory(updated);
-      return updated;
-    });
-
-    // Fire local notification (non-blocking)
-    if (rejectedReq) {
-      sendSubscriptionRejectedNotification(rejectedReq.subscriptionPlan, reason, requestId).catch(() => {});
-      // Also send backend notification so the customer sees it in their notification bell
-      sendNotification({
-        userId: rejectedReq.userId,
-        type: 'subscription',
-        title: 'Subscription Request Rejected',
-        body: `Your ${rejectedReq.subscriptionPlan} subscription request was not approved. Reason: ${reason}`,
-      }).catch(() => {});
-    }
-  }, [saveRequests, saveHistory]);
-
-  const activateAccount = useCallback((
-    requestId: string,
-    adminId: string,
-    adminName: string,
-  ) => {
-    let activatedReq: SubscriptionRequest | undefined;
-
-    setPendingRequests(prev => {
-      const updated = prev.map(req => {
-        if (req.id === requestId) {
-          activatedReq = { ...req, status: 'activated' as const, activationDate: new Date().toISOString() };
-          return activatedReq;
-        }
-        return req;
-      });
-      saveRequests(updated);
-      return updated;
-    });
-
-    setApprovalHistory(prev => {
-      const updated = [
-        ...prev,
-        {
-          id: `action-${Date.now()}`,
-          requestId,
-          adminId,
-          adminName,
-          adminRole: 'superadmin' as const,
-          action: 'activated' as const,
-          timestamp: new Date().toISOString(),
-        },
-      ];
-      saveHistory(updated);
-      return updated;
-    });
-
-    // Auto-activate subscription in auth-context (non-blocking)
-    if (activatedReq && onActivateSubscription) {
-      const req = activatedReq;
-      // Subscription expires 1 year from activation
-      const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-      // Derive pickupsRemaining from planPrice heuristic; -1 = unlimited for premium plans
-      const pickupsRemaining = req.planPrice >= 180 ? -1 : 4;
-
-      onActivateSubscription(req.userId, {
-        planId: req.planId || req.subscriptionPlan.toLowerCase().replace(/\s+/g, '_'),
-        planName: req.subscriptionPlan,
-        expiresAt,
-        pickupsRemaining,
-      }).catch(err => console.warn('[SubscriptionApproval] Failed to activate subscription:', err));
-    }
-
-    // Fire local notification (non-blocking)
-    if (activatedReq) {
-      sendSubscriptionActivatedNotification(activatedReq.subscriptionPlan, requestId).catch(() => {});
-      // Also send backend notification so the customer sees it in their notification bell
-      sendNotification({
-        userId: activatedReq.userId,
-        type: 'subscription',
-        title: 'Subscription Activated',
-        body: `Your ${activatedReq.subscriptionPlan} subscription is now active. You can start requesting pickups!`,
-      }).catch(() => {});
-    }
-  }, [saveRequests, saveHistory, onActivateSubscription]);
+  sendNotification({
+    userId: activatedRequest.userId,
+    type: 'subscription',
+    title: 'Subscription Activated',
+    body: `Your ${activatedRequest.subscriptionPlan} subscription is now active. You can start requesting pickups!`,
+  }).catch(() => {});
+}, [
+  pendingRequests,
+  approvalHistory,
+  saveRequests,
+  saveHistory,
+  onActivateSubscription,
+]);
 
   const getRequestById = useCallback((requestId: string) => {
     return pendingRequests.find(req => req.id === requestId);
@@ -430,23 +524,22 @@ export function SubscriptionApprovalProvider({
    * Returns the new request ID.
    */
   const addSubscriptionRequest = useCallback(async (
-    request: Omit<SubscriptionRequest, 'id' | 'status' | 'requestDate'>,
-  ): Promise<string> => {
-    const newRequest: SubscriptionRequest = {
-      ...request,
-      id: `req-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      status: 'pending',
-      requestDate: new Date().toISOString(),
-    };
+  request: Omit<SubscriptionRequest, 'id' | 'status' | 'requestDate'>,
+): Promise<string> => {
+  const newRequest: SubscriptionRequest = {
+    ...request,
+    id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    status: 'pending',
+    requestDate: new Date().toISOString(),
+  };
 
-    setPendingRequests(prev => {
-      const updated = [newRequest, ...prev];
-      saveRequests(updated);
-      return updated;
-    });
+  const updatedRequests = [newRequest, ...pendingRequests];
 
-    return newRequest.id;
-  }, [saveRequests]);
+  setPendingRequests(updatedRequests);
+  await saveRequests(updatedRequests);
+
+  return newRequest.id;
+}, [pendingRequests, saveRequests]);
 
   const getStats = useCallback(() => {
     return {

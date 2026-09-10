@@ -12,7 +12,7 @@ import {useRouter, useFocusEffect} from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useAdmin } from "@/lib/admin-context";
 import { User } from "@/lib/auth-context";
-import { APP_CONFIG } from "@/constants/app";
+//import { APP_CONFIG } from "@/constants/app";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -33,47 +33,63 @@ export default function AdminSubscriptionsScreen() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAdminAuthenticated) {
-      router.replace("/admin-login" as any);
-      return;
-    }
+  if (!isAdminAuthenticated) {
+    router.replace("/admin-login" as any);
+  }
+}, [isAdminAuthenticated, router]);
+
+useFocusEffect(
+  useCallback(() => {
     loadSubscriptions();
-  }, [isAdminAuthenticated]);
+
+    return undefined;
+  }, [loadSubscriptions])
+);
 
   useEffect(() => {
     filterUsers();
   }, [users, searchQuery, statusFilter]);
 
-  const loadSubscriptions = async () => {
-    try {
-      const usersDb = await AsyncStorage.getItem("@ltc_users_db");
-      if (usersDb) {
-        const parsed = JSON.parse(usersDb);
-        const usersList = Object.values(parsed) as User[];
-        
-        // Filter users with subscriptions and calculate days remaining
-        const subscribedUsers: SubscriptionUser[] = usersList
-          .filter((u) => u.subscription)
-          .map((u) => {
-            const endDate = u.subscription?.expiresAt ? new Date(u.subscription.expiresAt) : null;
-            const now = new Date();
-            const daysRemaining = endDate
-              ? Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-              : null;
-            return {
-              ...u,
-              daysRemaining: daysRemaining ?? undefined,
-            };
-          });
-        
-        setUsers(subscribedUsers);
-      }
-    } catch (error) {
-      console.error("Failed to load subscriptions:", error);
-    } finally {
-      setIsLoading(false);
+  const loadSubscriptions = useCallback(async () => {
+  try {
+    setIsLoading(true);
+
+    const usersDb = await AsyncStorage.getItem("@ltc_users_db");
+
+    if (!usersDb) {
+      setUsers([]);
+      return;
     }
-  };
+
+    const parsed: Record<string, User> = JSON.parse(usersDb);
+    const usersList = Object.values(parsed);
+
+    const now = Date.now();
+
+    const subscribedUsers: SubscriptionUser[] = usersList
+      .filter((u) => Boolean(u.subscription))
+      .map((u) => {
+        const expiresAt = u.subscription?.expiresAt;
+        const endTime = expiresAt ? new Date(expiresAt).getTime() : 0;
+
+        const daysRemaining = expiresAt
+          ? Math.ceil((endTime - now) / (1000 * 60 * 60 * 24))
+          : undefined;
+
+        return {
+          ...u,
+          daysRemaining,
+        };
+      });
+
+    setUsers(subscribedUsers);
+  } catch (error) {
+    console.error("Failed to load subscriptions:", error);
+    setUsers([]);
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
 
   const filterUsers = () => {
     let filtered = [...users];
@@ -139,12 +155,6 @@ export default function AdminSubscriptionsScreen() {
   const renderUserItem = ({ item }: { item: SubscriptionUser }) => {
     const statusStyle = getStatusStyle(item.daysRemaining);
   // Real-time: reload data every time this screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      loadSubscriptions();
-    }, [loadSubscriptions])
-  );
-
 
     return (
       <View className="bg-surface rounded-xl p-4 mb-3 border border-border">

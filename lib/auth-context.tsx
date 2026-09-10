@@ -1,3 +1,4 @@
+import { getOrCreateBackendUserId } from "@/lib/user-session";
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, AppStateStatus } from "react-native";
@@ -79,6 +80,7 @@ interface AuthContextType {
   register: (userData: Partial<User> & { password: string }) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -126,6 +128,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hydratedOnce.current = true;
         setIsLoading(false);
       }
+    }
+  }, []);
+
+  const refreshUser = useCallback(async (): Promise<User | null> => {
+    try {
+      const storedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USER);
+
+      if (!storedUser) {
+        setUser(null);
+        return null;
+      }
+
+      const currentUser: User = JSON.parse(storedUser);
+
+      // Check USERS_DB for the latest approved subscription data.
+      const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
+
+      if (usersDb) {
+        const users: Record<string, User & { password?: string }> =
+          JSON.parse(usersDb);
+
+        const latestUser = users[currentUser.id];
+
+        if (latestUser) {
+          const { password: _password, ...userWithoutPassword } = latestUser;
+
+          setUser(userWithoutPassword);
+          await AsyncStorage.setItem(
+            AUTH_STORAGE_KEYS.USER,
+            JSON.stringify(userWithoutPassword)
+          );
+
+          return userWithoutPassword;
+        }
+      }
+
+      setUser(currentUser);
+      return currentUser;
+    } catch (error) {
+      console.error("[AuthProvider] Failed to refresh user:", error);
+      return null;
     }
   }, []);
 
@@ -181,11 +224,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const usersDb = await AsyncStorage.getItem(AUTH_STORAGE_KEYS.USERS_DB);
       const users: Record<string, User & { password: string }> = usersDb ? JSON.parse(usersDb) : {};
 
-      const phoneExists = Object.values(users).some((u) => u.phone === userData.phone);
-      if (phoneExists) return false;
+      //const phoneExists = Object.values(users).some((u) => u.phone === userData.phone);
+      //if (phoneExists) return false;
+
+      const backendUserId = await getOrCreateBackendUserId(userData.phone, {
+        name: userData.fullName,
+        country: userData.country,
+        province: userData.province,
+        city: userData.city,
+        town: userData.town,
+        fullAddress: userData.fullAddress,
+      });
 
       const newUser: User & { password: string } = {
-        id: `user_${Date.now()}`,
+        id: backendUserId,
         fullName: userData.fullName || "",
         ...userData,
         zoneId: userData.zoneId ?? userData.assignedZoneId,
@@ -242,20 +294,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        isAuthenticated: !!user,
-        login,
-        register,
-        logout,
-        updateUser,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  <AuthContext.Provider
+    value={{
+      user,
+      isLoading,
+      isAuthenticated: !!user,
+      login,
+      register,
+      logout,
+      updateUser,
+      refreshUser,
+    }}
+  >
+    {children}
+  </AuthContext.Provider>
+ );
 }
 
 export function useAuth() {

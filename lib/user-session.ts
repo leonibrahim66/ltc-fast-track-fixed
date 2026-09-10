@@ -102,12 +102,13 @@ export async function clearBackendUserId(phone: string): Promise<void> {
 export async function getOrCreateBackendUserId(
   phone: string,
   opts?: {
-    country?: string;
-    province?: string;
-    city?: string;
-    town?: string;
-    fullAddress?: string;
-  }
+  name?: string;
+  country?: string;
+  province?: string;
+  city?: string;
+  town?: string;
+  fullAddress?: string;
+}
 ): Promise<string> {
   // 1. Check storage first — avoids creating duplicate users on restart
   const stored = await loadBackendUserId(phone);
@@ -117,13 +118,14 @@ export async function getOrCreateBackendUserId(
 
   // 2. No stored ID — call POST /api/users to get or create a backend user
   const result = await apiPost<CreateUserResponse>("/api/users", {
-    phoneNumber: phone,
-    country: opts?.country ?? "ZMB",
-    province: opts?.province,
-    city: opts?.city,
-    town: opts?.town,
-    fullAddress: opts?.fullAddress,
-  });
+  phoneNumber: phone,
+  name: opts?.name,
+  country: opts?.country ?? "ZMB",
+  province: opts?.province,
+  city: opts?.city,
+  town: opts?.town,
+  fullAddress: opts?.fullAddress,
+});
 
   const userId = result.data.userId;
 

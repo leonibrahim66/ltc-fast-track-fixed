@@ -29,11 +29,11 @@ const SAMPLE_HOME_NEWS: HomeNewsItem[] = [
   // ── News slide 1 ──
   {
     id: "home-1",
-    image: require("@/assets/news-images/garbage-truck.jpg"),
+    image: require("@/assets/news-images/garbage truck1.jpg"),
     title: "New Garbage Collection Routes",
     shortDescription: "Expanded service coverage across Lusaka",
     fullDescription:
-      "We're excited to announce expanded garbage collection routes covering more areas in Lusaka. Our new service zones include Kabulonga, Roma, Woodlands Extension, and PHI. Residential subscribers can now enjoy twice-weekly pickups with our upgraded fleet of eco-friendly trucks.",
+      "We're excited to announce expanded garbage collection routes covering more areas in Lusaka. Our new service zones include Rhodes park, Roma, Libala, and PHI. Residential subscribers can now enjoy twice-weekly pickups with our upgraded fleet of eco-friendly trucks.",
     category: "Trash Pickup Services",
     type: "news",
     isActive: true,
@@ -41,31 +41,31 @@ const SAMPLE_HOME_NEWS: HomeNewsItem[] = [
     createdAt: new Date().toISOString(),
   },
 
-  // ── Sponsor slide 1 — Mine Workers Union of Zambia (MUZ) ──
+  // ── Sponsor slide 1 — Channel Motorport Enterprise Ltd (CFM) ──
   {
-    id: "sponsor-muz-1",
-    image: require("@/assets/sponsors/muzflag.jpg"),
-    title: "Mine Workers Union of Zambia",
-    shortDescription: "Proudly supporting clean communities across Zambia since 1967",
+    id: "sponsor-cfm-1",
+    image: require("@/assets/sponsors/cfm vehicles1.jpg"),
+    title: "Channel Five Motorport Enterprise Ltd",
+    shortDescription: "Car Dealers In New And Quality Used Vehicles",
     fullDescription:
-      "The Mine Workers Union of Zambia (MUZ) is a proud sponsor of LTC Fast Track. Founded in 1967 under the motto 'Unity is Our Strength', MUZ represents thousands of mine workers across Zambia and is committed to improving the welfare of workers and their communities — including clean and healthy living environments.",
+      "Channel Five Motorsport Enterprise Limited is an automotive trading and vehicle importation company specializing in the importation, sourcing, sale, and supply of new and quality used vehicles. The company connects customers in Zambia with reliable vehicles sourced from reputable international markets, providing a convenient and professional vehicle purchasing experience.",
     category: "Announcement",
     type: "sponsor",
     isActive: true,
     order: 2,
     createdAt: new Date().toISOString(),
     sponsorDetails: {
-      sponsorName: "Mine Workers Union of Zambia",
-      sponsorType: "Community Partner",
+      sponsorName: "Channel Five Motorport Enterprise Ltd",
+      sponsorType: "Transport Partner",
       description:
-        "Founded in 1967, the Mine Workers Union of Zambia (MUZ) has been championing the rights and welfare of mine workers for over five decades. MUZ advocates for improved wages, safe working conditions, gender equality, skills development, and community social responsibility. As a proud partner of LTC Fast Track, MUZ supports our mission to keep Zambian communities clean and green.",
+        "Channel Five Motorsport Enterprise Limited is a Zambian automotive importation and trading company specializing in the sourcing, importation and sale of new and quality used vehicles. We source vehicles from reputable international markets and provide customers with a convenient vehicle procurement solution tailored to their preferred specifications and budget. Our services cover passenger cars, SUVs, pickups, commercial vehicles and other automotive needs. With a focus on quality, transparency, competitive pricing and customer satisfaction, Channel Five Motorsport Enterprise Limited aims to become a trusted name in Zambia's automotive industry and a reliable partner for individuals, businesses and vehicle dealers.",
       images: [
-        require("@/assets/sponsors/muzflag.jpg") as any,
-        require("@/assets/sponsors/muzforall.jpg") as any,
-        require("@/assets/sponsors/muzlogo.png") as any,
+        require("@/assets/sponsors/cfm vehicles1.jpg") as any,
+        require("@/assets/sponsors/cfm-image2.jpg") as any,
+        require("@/assets/sponsors/CFM LOGO.jpg") as any,
       ],
-      website: "https://www.muz.org.zm",
-      contact: "+260 212 210 000",
+      website: "https://www.cfmenterprise.com",
+      contact: "+260960500656",
     },
   },
 
@@ -84,32 +84,32 @@ const SAMPLE_HOME_NEWS: HomeNewsItem[] = [
     createdAt: new Date().toISOString(),
   },
 
-  // ── Sponsor slide 2 — Garden Court Kitwe ──
+  // ── Sponsor slide 2 — Liquid Airlines Ltd ──
   {
-    id: "sponsor-garden-court-1",
-    image: require("@/assets/sponsors/315476001.jpg"),
-    title: "Garden Court Kitwe",
-    shortDescription: "Premium hospitality in the heart of the Copperbelt",
+    id: "sponsor-liquid-airlines-1",
+    image: require("@/assets/sponsors/liquid-airlines-plane.jpg"),
+    title: "LIQUID AIRLINES LTD",
+    shortDescription: "Where excellence takes flight",
     fullDescription:
-      "Garden Court Kitwe is a premier hotel located in the heart of Kitwe, Zambia's Copperbelt Province. Offering world-class accommodation, fine dining, and conference facilities, Garden Court Kitwe is the preferred destination for business and leisure travellers. As an LTC Fast Track partner, they are committed to sustainable hospitality and a cleaner Zambia.",
+      "Liquid Airlines provides comfortable and reliable air travel services for passengers travelling across Zambia and beyond.",    
     category: "Announcement",
     type: "sponsor",
     isActive: true,
     order: 4,
     createdAt: new Date().toISOString(),
     sponsorDetails: {
-      sponsorName: "Garden Court Kitwe",
-      sponsorType: "Corporate Partner",
+      sponsorName: "LIQUID AIRLINES LTD",
+      sponsorType: "Travel Partner",
       description:
-        "Garden Court Kitwe is a leading hotel in Zambia's Copperbelt, offering premium rooms, a restaurant, conference facilities, and a pool terrace with stunning sunset views. As a corporate partner of LTC Fast Track, Garden Court Kitwe supports responsible waste management and environmental sustainability across the Copperbelt region.",
+        "Liquid Airlines connects travellers to their destinations with comfortable aircraft, professional service, and convenient travel solutions.",
       images: [
-        require("@/assets/sponsors/315476001.jpg") as any,
-        require("@/assets/sponsors/566511384.jpg") as any,
-        require("@/assets/sponsors/566512533.jpg") as any,
-        require("@/assets/sponsors/200731246.jpg") as any,
+        require("@/assets/sponsors/liquid-airlines-plane.jpg") as any,
+        require("@/assets/sponsors/liquid-airlines-service.jpg") as any,
+        require("@/assets/sponsors/liquid-airlines-van.jpg") as any,
+        require("@/assets/sponsors/liquid-airlines-fortuner.jpg") as any,
       ],
-      website: "https://www.tsogosun.com/garden-court-kitwe",
-      contact: "+260 212 222 000",
+      website: "https://www.liquidairlines.com/liquid-airllines-ltd",
+      contact: "+260960819993",
     },
   },
 
@@ -261,10 +261,10 @@ export function NewsProvider({ children }: { children: ReactNode }) {
     return navigationNews.filter((item) => item.isActive).sort((a, b) => a.order - b.order);
   };
 
-  useEffect(() => {
-    loadHomeNews();
-    loadNavigationNews();
-  }, []);
+useEffect(() => {
+  loadHomeNews();
+  loadNavigationNews();
+}, []);
 
   return (
     <NewsContext.Provider

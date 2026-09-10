@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   ScrollView,
   Text,
@@ -87,22 +87,22 @@ export default function AdminSubscriptionApprovalScreen() {
     }
   };
 
-  const handleActivate = async () => {
-    if (!selectedRequest || !adminUser) return;
+  const handleActivate = async (request: any) => {
+  if (!request || !adminUser) return;
 
-    try {
-      activateAccount(
-        selectedRequest.id,
-        adminUser.id || 'admin',
-        adminUser.fullName || 'Admin'
-      );
+  try {
+    await activateAccount(
+      request.id,
+      adminUser.id || 'admin',
+      adminUser.fullName || 'Admin'
+    );
 
-      Alert.alert('Success', 'User account activated successfully');
-      setSelectedRequest(null);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to activate account');
-    }
-  };
+    Alert.alert('Success', 'User account activated successfully');
+    setSelectedRequest(null);
+  } catch (error) {
+    Alert.alert('Error', 'Failed to activate account');
+  }
+};
 
   const requests = getRequestsByStatus(activeTab);
   const stats = {
@@ -339,28 +339,28 @@ export default function AdminSubscriptionApprovalScreen() {
                     </View>
                   )}
 
-                  {request.status === 'approved' && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setSelectedRequest(request);
-                        Alert.alert(
-                          'Activate Account',
-                          'Activate this user account now?',
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Activate',
-                              onPress: handleActivate,
-                              style: 'default',
-                            },
-                          ]
-                        );
-                      }}
-                      className="bg-primary rounded-lg py-2 items-center"
-                    >
-                      <Text className="text-white font-semibold text-sm">Activate Account</Text>
-                    </TouchableOpacity>
-                  )}
+                 {request.status === 'approved' && (
+  <TouchableOpacity
+    onPress={() => {
+      Alert.alert(
+        'Activate Account',
+        'Activate this user account now?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Activate',
+            onPress: () => handleActivate(request),
+          },
+        ]
+      );
+    }}
+    className="bg-primary rounded-lg py-2 items-center"
+  >
+    <Text className="text-white font-semibold text-sm">
+      Activate Account
+    </Text>
+  </TouchableOpacity>
+)}
 
                   {request.rejectionReason && (
                     <View className="bg-error/10 rounded-lg p-2 mt-3">

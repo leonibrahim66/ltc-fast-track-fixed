@@ -9,6 +9,7 @@ import express, { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
+import bcrypt from "bcrypt";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const NODE_ENV = process.env.NODE_ENV ?? "development";
@@ -32,73 +33,128 @@ const pool = new Pool({
 
 async function initDB(): Promise<void> {
   const client = await pool.connect();
+
   try {
+    // Create tables
     await client.query(`
       CREATE TABLE IF NOT EXISTS ltc_users (
-        id            TEXT PRIMARY KEY,
+        id TEXT PRIMARY KEY,
+        name TEXT,
         "phoneNumber" TEXT NOT NULL UNIQUE,
-        country       TEXT NOT NULL DEFAULT 'ZMB',
-        province      TEXT,
-        city          TEXT,
-        town          TEXT,
+        country TEXT NOT NULL DEFAULT 'ZMB',
+        province TEXT,
+        city TEXT,
+        town TEXT,
         "fullAddress" TEXT,
-        "createdAt"   TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        "createdAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        )
       );
+
       CREATE TABLE IF NOT EXISTS ltc_wallets (
-        id          TEXT PRIMARY KEY,
-        "userId"    TEXT NOT NULL UNIQUE REFERENCES ltc_users(id) ON DELETE CASCADE,
-        balance     NUMERIC NOT NULL DEFAULT 0,
-        "updatedAt" TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        id TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL UNIQUE REFERENCES ltc_users(id) ON DELETE CASCADE,
+        balance NUMERIC NOT NULL DEFAULT 0,
+        "updatedAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        )
       );
+
       CREATE TABLE IF NOT EXISTS ltc_transactions (
-        id            TEXT PRIMARY KEY,
-        "userId"      TEXT NOT NULL REFERENCES ltc_users(id) ON DELETE CASCADE,
-        "depositId"   TEXT NOT NULL UNIQUE,
-        amount        NUMERIC NOT NULL,
-        type          TEXT NOT NULL DEFAULT 'deposit',
-        status        TEXT NOT NULL DEFAULT 'pending',
-        provider      TEXT,
+        id TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL REFERENCES ltc_users(id) ON DELETE CASCADE,
+        "depositId" TEXT NOT NULL UNIQUE,
+        amount NUMERIC NOT NULL,
+        type TEXT NOT NULL DEFAULT 'deposit',
+        status TEXT NOT NULL DEFAULT 'pending',
+        provider TEXT,
         "phoneNumber" TEXT,
-        "createdAt"   TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        "updatedAt"   TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        "createdAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        ),
+        "updatedAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        )
       );
+
       CREATE TABLE IF NOT EXISTS ltc_linked_accounts (
-        id              TEXT PRIMARY KEY,
-        "userId"        TEXT NOT NULL UNIQUE REFERENCES ltc_users(id) ON DELETE CASCADE,
-        "phoneNumber"   TEXT NOT NULL,
-        provider        TEXT NOT NULL,
+        id TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL UNIQUE REFERENCES ltc_users(id) ON DELETE CASCADE,
+        "phoneNumber" TEXT NOT NULL,
+        provider TEXT NOT NULL,
         "withdrawalPin" TEXT NOT NULL,
-        "isActive"      INTEGER NOT NULL DEFAULT 1,
-        "createdAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        "updatedAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        "isActive" INTEGER NOT NULL DEFAULT 1,
+        "createdAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        ),
+        "updatedAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        )
       );
+
       CREATE TABLE IF NOT EXISTS ltc_pickups (
-        id              TEXT PRIMARY KEY,
-        "userId"        TEXT NOT NULL REFERENCES ltc_users(id) ON DELETE CASCADE,
-        "userName"      TEXT,
-        "userPhone"     TEXT,
-        location        TEXT,
-        latitude        NUMERIC,
-        longitude       NUMERIC,
-        "wasteType"     TEXT NOT NULL DEFAULT 'residential',
-        notes           TEXT,
-        status          TEXT NOT NULL DEFAULT 'pending',
-        "zoneId"        TEXT,
+        id TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL REFERENCES ltc_users(id) ON DELETE CASCADE,
+        "userName" TEXT,
+        "userPhone" TEXT,
+        location TEXT,
+        latitude NUMERIC,
+        longitude NUMERIC,
+        "wasteType" TEXT NOT NULL DEFAULT 'residential',
+        notes TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        "zoneId" TEXT,
         "scheduledDate" TEXT,
         "scheduledTime" TEXT,
-        "assignedTo"    TEXT,
-        "completedAt"   TEXT,
-        "createdAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-        "updatedAt"     TEXT NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        "assignedTo" TEXT,
+        "completedAt" TEXT,
+        "createdAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        ),
+        "updatedAt" TEXT NOT NULL DEFAULT to_char(
+          now() AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS"Z"'
+        )
       );
-      CREATE INDEX IF NOT EXISTS idx_ltc_txn_uid    ON ltc_transactions("userId");
-      CREATE INDEX IF NOT EXISTS idx_ltc_txn_depid  ON ltc_transactions("depositId");
-      CREATE INDEX IF NOT EXISTS idx_ltc_txn_status ON ltc_transactions(status);
-      CREATE INDEX IF NOT EXISTS idx_ltc_wal_uid    ON ltc_wallets("userId");
-      CREATE INDEX IF NOT EXISTS idx_ltc_lnk_uid    ON ltc_linked_accounts("userId");
-      CREATE INDEX IF NOT EXISTS idx_ltc_pck_uid    ON ltc_pickups("userId");
-      CREATE INDEX IF NOT EXISTS idx_ltc_pck_status ON ltc_pickups(status);
     `);
+
+    // Migration for databases created before the name column existed
+    await client.query(`
+      ALTER TABLE ltc_users
+      ADD COLUMN IF NOT EXISTS name TEXT;
+    `);
+
+    // Create indexes
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ltc_txn_uid
+        ON ltc_transactions("userId");
+
+      CREATE INDEX IF NOT EXISTS idx_ltc_txn_depid
+        ON ltc_transactions("depositId");
+
+      CREATE INDEX IF NOT EXISTS idx_ltc_txn_status
+        ON ltc_transactions(status);
+
+      CREATE INDEX IF NOT EXISTS idx_ltc_wal_uid
+        ON ltc_wallets("userId");
+
+      CREATE INDEX IF NOT EXISTS idx_ltc_lnk_uid
+        ON ltc_linked_accounts("userId");
+
+      CREATE INDEX IF NOT EXISTS idx_ltc_pck_uid
+        ON ltc_pickups("userId");
+
+      CREATE INDEX IF NOT EXISTS idx_ltc_pck_status
+        ON ltc_pickups(status);
+    `);
+
       // ============================================================
       // LTC FAST TRACK — EXISTING OPERATIONAL TABLES
       // These tables already exist in Railway PostgreSQL.
@@ -210,6 +266,15 @@ async function initDB(): Promise<void> {
         ON users ("openId");
       `);
 
+       await client.query(`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS "ltcUserId" TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS users_ltc_user_id_unique
+        ON users ("ltcUserId")
+        WHERE "ltcUserId" IS NOT NULL;
+      `);
+
       // ============================================================
       // 2. DRIVER PROFILES
       // ============================================================
@@ -272,6 +337,11 @@ async function initDB(): Promise<void> {
            "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
            "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
          );
+      `);
+
+       await client.query(` 
+        CREATE UNIQUE INDEX IF NOT EXISTS linked_accounts_user_id_unique
+        ON linked_accounts("userId");
       `);
 
       // ============================================================
@@ -534,6 +604,9 @@ async function initDB(): Promise<void> {
           "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
         );
       `);
+
+      await client.query(`  CREATE UNIQUE INDEX IF NOT EXISTS customer_wallets_user_id_unique  ON customer_wallets       ("userId");
+     `);   
 
       // ============================================================
       // 17. CUSTOMER WALLET TRANSACTIONS
@@ -909,7 +982,7 @@ async function initDB(): Promise<void> {
   } finally { client.release(); }
 }
 
-interface User { id: string; phoneNumber: string; country: string; province?: string; city?: string; town?: string; fullAddress?: string; createdAt: string; }
+interface User { id: string; name?: string | null; phoneNumber: string; country: string; province?: string | null; city?: string | null; town?: string | null; fullAddress?: string | null; createdAt: string; }
 interface Wallet { id: string; userId: string; balance: string; updatedAt: string; }
 interface Transaction { id: string; userId: string; depositId: string; amount: string; type: string; status: string; provider: string | null; phoneNumber: string | null; createdAt: string; updatedAt: string; }
 interface LinkedAccount { id: string; userId: string; phoneNumber: string; provider: string; withdrawalPin: string; isActive: number; createdAt: string; updatedAt: string; }
@@ -918,19 +991,150 @@ interface Pickup { id: string; userId: string; userName: string | null; userPhon
 
 function now(): string { return new Date().toISOString().replace(/\.\d{3}Z$/, "Z"); }
 
-async function getOrCreateUser(phoneNumber: string, opts?: { country?: string; province?: string; city?: string; town?: string; fullAddress?: string }): Promise<User> {
-  const existing = await pool.query<User>(`SELECT * FROM ltc_users WHERE "phoneNumber" = $1`, [phoneNumber]);
-  if (existing.rows[0]) return existing.rows[0];
-  const userId = `user_${uuidv4().replace(/-/g, "").substring(0, 12)}`;
-  await pool.query(`INSERT INTO ltc_users (id, "phoneNumber", country, province, city, town, "fullAddress", "createdAt") VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [userId, phoneNumber, opts?.country ?? "ZMB", opts?.province ?? null, opts?.city ?? null, opts?.town ?? null, opts?.fullAddress ?? null, now()]);
-  const result = await pool.query<User>(`SELECT * FROM ltc_users WHERE id = $1`, [userId]);
+async function getOrCreateUser(
+  phoneNumber: string,
+  opts?: {
+    name?: string;
+    country?: string;
+    province?: string;
+    city?: string;
+    town?: string;
+    fullAddress?: string;
+  }
+): Promise<User> {
+
+  const existing = await pool.query<User>(
+    `SELECT * FROM ltc_users WHERE "phoneNumber" = $1`,
+    [phoneNumber]
+  );
+
+  // User already exists
+   // Update missing information
+    if (existing.rows[0]) {
+  const updated = await pool.query<User>(
+    `UPDATE ltc_users
+     SET
+       name = COALESCE(NULLIF($1, ''), name),
+       country = COALESCE(NULLIF($2, ''), country),
+       province = COALESCE(NULLIF($3, ''), province),
+       city = COALESCE(NULLIF($4, ''), city),
+       town = COALESCE(NULLIF($5, ''), town),
+       "fullAddress" = COALESCE(NULLIF($6, ''), "fullAddress")
+     WHERE "phoneNumber" = $7
+     RETURNING *`,
+    [
+      opts?.name ?? null,
+      opts?.country ?? null,
+      opts?.province ?? null,
+      opts?.city ?? null,
+      opts?.town ?? null,
+      opts?.fullAddress ?? null,
+      phoneNumber,
+    ]
+  );
+
+  return updated.rows[0];
+}
+
+  // Create new user
+  const userId = `user_${uuidv4()
+    .replace(/-/g, "")
+    .substring(0, 12)}`;
+
+  await pool.query(
+    `INSERT INTO ltc_users
+      (
+        id,
+        name,
+        "phoneNumber",
+        country,
+        province,
+        city,
+        town,
+        "fullAddress",
+        "createdAt"
+      )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      userId,
+      opts?.name ?? null,
+      phoneNumber,
+      opts?.country ?? "ZMB",
+      opts?.province ?? null,
+      opts?.city ?? null,
+      opts?.town ?? null,
+      opts?.fullAddress ?? null,
+      now(),
+    ]
+  );
+
+  const result = await pool.query<User>(
+    `SELECT * FROM ltc_users WHERE id = $1`,
+    [userId]
+  );
+
   return result.rows[0];
 }
 
 async function getUserById(userId: string): Promise<User | undefined> {
   const result = await pool.query<User>(`SELECT * FROM ltc_users WHERE id = $1`, [userId]);
   return result.rows[0];
+}
+
+async function getOrCreateOperationalUser(
+  ltcUser: User
+): Promise<number> {
+  const openId = `ltc_${ltcUser.id}`;
+
+  const result = await pool.query<{ id: number }>(
+    `
+    INSERT INTO users (
+      "openId",
+      "ltcUserId",
+      name,
+      phone,
+      role,
+      "updatedAt",
+      "lastSignedIn"
+    )
+    VALUES ($1, $2, $3, $4, 'user', NOW(), NOW())
+    ON CONFLICT ("openId")
+    DO UPDATE SET
+      "ltcUserId" = EXCLUDED."ltcUserId",
+      name = COALESCE(EXCLUDED.name, users.name),
+      phone = COALESCE(EXCLUDED.phone, users.phone),
+      "updatedAt" = NOW(),
+      "lastSignedIn" = NOW()
+    RETURNING id
+    `,
+    [
+      openId,
+      ltcUser.id,
+      ltcUser.name ?? ltcUser.phoneNumber,
+      ltcUser.phoneNumber,
+    ]
+  );
+
+  return result.rows[0].id;
+}
+
+async function getOrCreateCustomerWallet(
+  operationalUserId: number
+): Promise<void> {
+  await pool.query(
+    `
+    INSERT INTO customer_wallets (
+      "userId",
+      "totalBalance",
+      "rechargedBalance",
+      "referralBalance"
+    )
+    VALUES ($1, 0, 0, 0)
+    ON CONFLICT ("userId")
+    DO NOTHING
+    `,
+    [operationalUserId]
+  );
 }
 
 async function getOrCreateWallet(userId: string): Promise<Wallet> {
@@ -969,6 +1173,111 @@ async function updateTransactionStatus(depositId: string, status: string): Promi
   await pool.query(`UPDATE ltc_transactions SET status = $1, "updatedAt" = $2 WHERE "depositId" = $3`, [status, now(), depositId]);
 }
 
+async function completeDepositTransaction(
+  depositId: string,
+  amount: number
+): Promise<boolean> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query<Transaction>(
+      `
+      SELECT *
+      FROM ltc_transactions
+      WHERE "depositId" = $1
+      FOR UPDATE
+      `,
+      [depositId]
+    );
+
+    const transaction = result.rows[0];
+
+    if (!transaction || transaction.status === "completed") {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    if (transaction.type !== "deposit") {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    await client.query(
+      `
+      UPDATE ltc_wallets
+      SET
+        balance = balance + $1,
+        "updatedAt" = $2
+      WHERE "userId" = $3
+      `,
+      [amount, now(), transaction.userId]
+    );
+
+    const operationalUser = await client.query<{ id: number }>(
+      `
+      SELECT id
+      FROM users
+      WHERE "ltcUserId" = $1
+      `,
+      [transaction.userId]
+    );
+
+    if (operationalUser.rows[0]) {
+      await client.query(
+        `
+        INSERT INTO customer_wallets (
+          "userId",
+          "totalBalance",
+          "rechargedBalance",
+          "referralBalance"
+        )
+        VALUES ($1, 0, 0, 0)
+        ON CONFLICT ("userId") DO NOTHING
+        `,
+        [operationalUser.rows[0].id]
+      );
+
+      await client.query(
+        `
+        UPDATE customer_wallets
+        SET
+          "totalBalance" = "totalBalance" + $1,
+          "rechargedBalance" = "rechargedBalance" + $1,
+          "updatedAt" = NOW()
+        WHERE "userId" = $2
+        `,
+        [amount, operationalUser.rows[0].id]
+      );
+    }
+
+    await client.query(
+      `
+      UPDATE ltc_transactions
+      SET
+        status = 'completed',
+        "updatedAt" = $1
+      WHERE "depositId" = $2
+      `,
+      [now(), depositId]
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback errors
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function getTransactionsByUserId(userId: string): Promise<Transaction[]> {
   const result = await pool.query<Transaction>(`SELECT * FROM ltc_transactions WHERE "userId" = $1 ORDER BY "createdAt" DESC`, [userId]);
   return result.rows;
@@ -979,14 +1288,56 @@ async function getLinkedAccount(userId: string): Promise<LinkedAccount | undefin
   return result.rows[0];
 }
 
-async function linkAccount(userId: string, phoneNumber: string, provider: string, withdrawalPin: string): Promise<LinkedAccount> {
+async function linkAccount(
+  userId: string,
+  phoneNumber: string,
+  provider: string,
+  withdrawalPin: string
+): Promise<LinkedAccount> {
   const accountId = `linked_${uuidv4().replace(/-/g, "").substring(0, 12)}`;
   const n = now();
-  await pool.query(
-    `INSERT INTO ltc_linked_accounts (id, "userId", "phoneNumber", provider, "withdrawalPin", "isActive", "createdAt", "updatedAt") VALUES ($1,$2,$3,$4,$5,1,$6,$7)
-     ON CONFLICT ("userId") DO UPDATE SET "phoneNumber"=EXCLUDED."phoneNumber", provider=EXCLUDED.provider, "withdrawalPin"=EXCLUDED."withdrawalPin", "isActive"=1, "updatedAt"=EXCLUDED."updatedAt"`,
-    [accountId, userId, phoneNumber, provider, withdrawalPin, n, n]);
-  const result = await pool.query<LinkedAccount>(`SELECT * FROM ltc_linked_accounts WHERE "userId" = $1 AND "isActive" = 1`, [userId]);
+  const hashedWithdrawalPin = await bcrypt.hash(withdrawalPin, 12);
+    await pool.query(
+    `
+    INSERT INTO ltc_linked_accounts (
+      id,
+      "userId",
+      "phoneNumber",
+      provider,
+      "withdrawalPin",
+      "isActive",
+      "createdAt",
+      "updatedAt"
+    )
+    VALUES ($1, $2, $3, $4, $5, 1, $6, $7)
+    ON CONFLICT ("userId")
+    DO UPDATE SET
+      "phoneNumber" = EXCLUDED."phoneNumber",
+      provider = EXCLUDED.provider,
+      "withdrawalPin" = EXCLUDED."withdrawalPin",
+      "isActive" = 1,
+      "updatedAt" = EXCLUDED."updatedAt"
+    `,
+    [
+      accountId,
+      userId,
+      phoneNumber,
+      provider,
+      hashedWithdrawalPin,
+      n,
+      n,
+    ]
+  );
+
+  const result = await pool.query<LinkedAccount>(
+    `
+    SELECT *
+    FROM ltc_linked_accounts
+    WHERE "userId" = $1
+      AND "isActive" = 1
+    `,
+    [userId]
+  );
   return result.rows[0];
 }
 
@@ -1064,12 +1415,69 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, env: NODE_ENV, pawapa
 
 app.post("/api/users", async (req: Request, res: Response) => {
   try {
-    const { phoneNumber, country, province, city, town, fullAddress } = req.body;
-    if (!phoneNumber) return res.status(400).json({ success: false, message: "Missing phoneNumber" });
-    const user = await getOrCreateUser(phoneNumber, { country, province, city, town, fullAddress });
+    const {
+      phoneNumber,
+      name,
+      country,
+      province,
+      city,
+      town,
+      fullAddress,
+    } = req.body;
+
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing phoneNumber",
+      });
+    }
+
+    console.log("Creating user:", {
+      phoneNumber,
+      name,
+      country,
+      province,
+      city,
+    });
+
+    const user = await getOrCreateUser(phoneNumber, {
+     name,
+     country,
+     province,
+     city,
+     town,
+     fullAddress,
+   });
+
     await getOrCreateWallet(user.id);
-    return res.status(200).json({ success: true, data: { userId: user.id, phoneNumber: user.phoneNumber, country: user.country, isNew: false } });
-  } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Internal server error" }); }
+
+    const operationalUserId = await getOrCreateOperationalUser(user);
+    await getOrCreateCustomerWallet(operationalUserId);
+
+    return res.status(200).json({
+     success: true,
+     data: {
+      userId: user.id,
+      operationalUserId,
+      phoneNumber: user.phoneNumber,
+      name: user.name,
+      country: user.country,
+      province: user.province,
+      city: user.city,
+      isNew: false,
+     },
+   });
+  } catch (error) {
+    console.error("POST /api/users error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Internal server error",
+    });
+  }
 });
 
 app.get("/api/users/:userId", async (req: Request, res: Response) => {
@@ -1088,44 +1496,115 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
     if (!phoneNumber) return res.status(400).json({ success: false, message: "Missing phoneNumber", errorCode: "MISSING_PHONE" });
     const user = bodyUserId ? ((await getUserById(bodyUserId)) ?? (await getOrCreateUser(phoneNumber, { country: countryCode }))) : await getOrCreateUser(phoneNumber, { country: countryCode });
     await getOrCreateWallet(user.id);
+    const operationalUserId = await getOrCreateOperationalUser(user);
+    await getOrCreateCustomerWallet(operationalUserId);
     const e164Phone = toE164(countryCode, phoneNumber);
     const correspondent = detectNetwork(countryCode, phoneNumber);
     const currency = currencyForCountry(countryCode);
     const depositId = uuidv4();
     const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-    const pawaPayResponse = await initiatePawaPayDeposit({ depositId, payer: { type: "MMO", accountDetails: { phoneNumber: e164Phone, provider: correspondent } }, amount: String(Number(amount).toFixed(2)), currency, clientReferenceId: user.id, customerMessage: "LTC Fast Track payment" });
+    const pawaPayResponse = await initiatePawaPayDeposit({
+      depositId,
+      payer: {
+        type: "MMO",
+        accountDetails: {
+          phoneNumber: e164Phone,
+          provider: correspondent,
+        },
+      },
+      amount: String(Number(amount).toFixed(2)),
+      currency,
+      clientReferenceId: user.id,
+      customerMessage: "LTC Fast Track payment",
+      callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
+    });
     if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Payment rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
     const transaction = await createTransaction(user.id, depositId, Number(amount), "deposit", correspondent, e164Phone);
-    return res.status(201).json({ success: true, data: { depositId: displayDepositId, providerDepositId: depositId, status: pawaPayResponse.status, amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, userId: user.id, transactionId: transaction.id, createdAt: pawaPayResponse.created ?? new Date().toISOString() }, timestamp: new Date().toISOString() });
+    return res.status(201).json({ success: true, data: { depositId, displayDepositId, providerDepositId: depositId, status: pawaPayResponse.status, amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, userId: user.id, transactionId: transaction.id, createdAt: pawaPayResponse.created ?? new Date().toISOString() }, timestamp: new Date().toISOString() });
   } catch (error: any) {
     const msg = axios.isAxiosError(error) ? error.message : (error instanceof Error ? error.message : "Internal server error");
     return res.status(500).json({ success: false, message: msg, errorCode: "PAWAPAY_ERROR", details: axios.isAxiosError(error) ? error.response?.data : null });
   }
 });
 
-app.get("/api/payments/:depositId/status", async (req: Request, res: Response) => {
-  try {
-    const depositId = req.params["depositId"];
-    const verify = req.query["verify"] === "true";
-    const transaction = await getTransactionByDepositId(depositId);
-    if (!transaction) return res.status(404).json({ success: false, message: "Transaction not found" });
-    let liveStatus: string | undefined;
-    if (verify) {
-      const liveData = await fetchPawaPayDepositStatus(depositId);
-      if (liveData) {
-        liveStatus = liveData.status;
-        if (liveData.status === "COMPLETED" && transaction.status !== "completed") {
-          await updateWalletBalance(transaction.userId, transaction.amount);
-          await updateTransactionStatus(depositId, "completed");
+app.get(
+  "/api/payments/:depositId/status",
+  async (req: Request, res: Response) => {
+    try {
+      const depositId = req.params["depositId"];
+      const verify = req.query["verify"] === "true";
+
+      const transaction = await getTransactionByDepositId(depositId);
+
+      if (!transaction) {
+        return res.status(404).json({
+          success: false,
+          message: "Transaction not found",
+        });
+      }
+
+      let liveStatus: string | undefined;
+
+      if (verify) {
+        const liveData = await fetchPawaPayDepositStatus(depositId);
+
+        if (liveData) {
+          liveStatus = liveData.status;
+
+          if (liveData.status === "COMPLETED") {
+            await completeDepositTransaction(
+              depositId,
+              Number(liveData.amount ?? transaction.amount)
+            );
+          } else if (liveData.status === "FAILED") {
+            await updateTransactionStatus(depositId, "failed");
+          } else if (
+            liveData.status === "ACCEPTED" &&
+            Date.now() -
+              new Date(transaction.createdAt).getTime() >
+              60000
+          ) {
+            await updateTransactionStatus(depositId, "failed");
+          }
+        } else if (
+          Date.now() -
+            new Date(transaction.createdAt).getTime() >
+          60000
+        ) {
+          await updateTransactionStatus(depositId, "failed");
         }
-        else if (liveData.status === "FAILED") await updateTransactionStatus(depositId, "failed");
-        else if (liveData.status === "ACCEPTED" && Date.now() - new Date(transaction.createdAt).getTime() > 60000) await updateTransactionStatus(depositId, "failed");
-      } else if (Date.now() - new Date(transaction.createdAt).getTime() > 60000) await updateTransactionStatus(depositId, "failed");
+      }
+
+      const updated =
+        (await getTransactionByDepositId(depositId)) ?? transaction;
+
+      return res.json({
+        success: true,
+        data: {
+          depositId: updated.depositId,
+          transactionId: updated.id,
+          userId: updated.userId,
+          amount: updated.amount,
+          status: updated.status,
+          provider: updated.provider,
+          phoneNumber: updated.phoneNumber,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+          ...(liveStatus ? { liveStatus } : {}),
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Internal server error",
+      });
     }
-    const updated = (await getTransactionByDepositId(depositId)) ?? transaction;
-    return res.json({ success: true, data: { depositId: updated.depositId, transactionId: updated.id, userId: updated.userId, amount: updated.amount, status: updated.status, provider: updated.provider, phoneNumber: updated.phoneNumber, createdAt: updated.createdAt, updatedAt: updated.updatedAt, ...(liveStatus ? { liveStatus } : {}) }, timestamp: new Date().toISOString() });
-  } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Internal server error" }); }
-});
+  }
+);
 
 app.post("/api/payments/pawapay/callback", async (req: Request, res: Response) => {
   try {
@@ -1136,8 +1615,25 @@ app.post("/api/payments/pawapay/callback", async (req: Request, res: Response) =
     const transaction = await getTransactionByDepositId(referenceId);
     if (!transaction) return res.json({ success: true, data: { received: true, referenceId } });
     if (transaction.status === "completed" || transaction.status === "failed") return res.json({ success: true, data: { received: true, referenceId } });
-    if (status === "COMPLETED") { if (transaction.type === "deposit") await updateWalletBalance(transaction.userId, Number(amount ?? transaction.amount)); await updateTransactionStatus(referenceId, "completed"); }
-    else if (status === "FAILED") { if (transaction.type === "withdrawal") await updateWalletBalance(transaction.userId, Math.abs(transaction.amount)); await updateTransactionStatus(referenceId, "failed"); }
+    if (status === "COMPLETED") {
+  if (transaction.type === "deposit") {
+    await completeDepositTransaction(
+      referenceId,
+      Number(amount ?? transaction.amount)
+    );
+  } else {
+    await updateTransactionStatus(referenceId, "completed");
+  }
+} else if (status === "FAILED") {
+  if (transaction.type === "withdrawal") {
+    await updateWalletBalance(
+      transaction.userId,
+      Math.abs(Number(transaction.amount))
+    );
+  }
+
+  await updateTransactionStatus(referenceId, "failed");
+}
     return res.json({ success: true, data: { received: true, referenceId } });
   } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Callback error" }); }
 });
@@ -1160,17 +1656,114 @@ app.get("/api/transactions/:userId", async (req: Request, res: Response) => {
   } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Internal server error" }); }
 });
 
+function normalizeProvider(provider: string): string {
+  const value = provider.toLowerCase();
+
+  if (value.includes("mtn")) return "mtn_momo";
+  if (value.includes("airtel")) return "airtel_money";
+  if (value.includes("zamtel")) return "zamtel_money";
+
+  return value;
+}
+
 app.post("/api/linked-accounts/:userId/link", async (req: Request, res: Response) => {
   try {
     const { phoneNumber, provider, withdrawalPin } = req.body;
-    if (!phoneNumber || phoneNumber.length < 10) return res.status(400).json({ success: false, message: "Invalid phone number" });
-    if (!provider) return res.status(400).json({ success: false, message: "Provider required" });
-    if (!withdrawalPin || withdrawalPin.length < 4) return res.status(400).json({ success: false, message: "Invalid PIN" });
+
+    if (!phoneNumber || phoneNumber.length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid phone number",
+      });
+    }
+
+    if (!provider) {
+      return res.status(400).json({
+        success: false,
+        message: "Provider required",
+      });
+    }
+
+    if (!withdrawalPin || withdrawalPin.length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid PIN",
+      });
+    }
+
+    const normalizedProvider = normalizeProvider(provider);
+
+    if (
+      !["mtn_momo", "airtel_money", "zamtel_money"].includes(
+        normalizedProvider
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid provider",
+      });
+    }
+
     const user = await getUserById(req.params["userId"]);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    const linked = await linkAccount(req.params["userId"], phoneNumber, provider, withdrawalPin);
-    return res.status(201).json({ success: true, data: { id: linked.id, phoneNumber: linked.phoneNumber, provider: linked.provider, isActive: linked.isActive === 1, createdAt: linked.createdAt } });
-  } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Internal server error" }); }
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const linked = await linkAccount(
+      req.params["userId"],
+      phoneNumber,
+      normalizedProvider,
+      withdrawalPin
+    );
+
+    const operationalUserId = await getOrCreateOperationalUser(user);
+    await getOrCreateCustomerWallet(operationalUserId);
+
+    await pool.query(
+      `
+      INSERT INTO linked_accounts (
+        "userId",
+        "phoneNumber",
+        provider,
+        "isActive",
+        "updatedAt"
+      )
+      VALUES ($1, $2, $3::provider_enum, TRUE, NOW())
+      ON CONFLICT ("userId")
+      DO UPDATE SET
+        "phoneNumber" = EXCLUDED."phoneNumber",
+        provider = EXCLUDED.provider,
+        "isActive" = TRUE,
+        "updatedAt" = NOW()
+      `,
+      [operationalUserId, phoneNumber, normalizedProvider]
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: linked.id,
+        phoneNumber: linked.phoneNumber,
+        provider: linked.provider,
+        isActive: linked.isActive === 1,
+        createdAt: linked.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Link account error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Internal server error",
+    });
+  }
 });
 
 app.get("/api/linked-accounts/:userId", async (req: Request, res: Response) => {
@@ -1198,23 +1791,129 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
     if (Number(amount) <= 0) return res.status(400).json({ success: false, message: "Amount must be > 0" });
     const user = await getUserById(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    const wallet = await getWalletByUserId(userId);
-    if (!wallet || Number(wallet.balance) < Number(amount)) return res.status(400).json({ success: false, message: "Insufficient balance" });
+     const wallet = await getWalletByUserId(userId);
+
+    if (!wallet) {
+      return res.status(400).json({
+        success: false,
+        message: "Wallet not found",
+      });
+    }
+
     const linked = await getLinkedAccount(userId);
-    if (!linked) return res.status(400).json({ success: false, message: "No linked account found" });
-    if (linked.withdrawalPin !== withdrawalPin) return res.status(400).json({ success: false, message: "Invalid withdrawal PIN" });
-    const payoutId = uuidv4();
-    const displayWithdrawalId = `LTC-WD-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+
+    if (!linked) {
+      return res.status(400).json({
+        success: false,
+        message: "No linked account found",
+      });
+    }
+
+    const validWithdrawalPin = await bcrypt.compare(
+      String(withdrawalPin),
+      linked.withdrawalPin
+    );
+
+    if (!validWithdrawalPin) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid withdrawal PIN",
+      });
+    }
+       const payoutId = uuidv4();
+    const displayWithdrawalId = `LTC-WD-${Date.now()}-${Math.floor(
+      Math.random() * 9999
+    )}`;
+
     const userCountry = user.country ?? "ZMB";
     const e164Phone = toE164(userCountry, linked.phoneNumber);
     const correspondent = detectNetwork(userCountry, linked.phoneNumber);
     const currency = currencyForCountry(userCountry);
-    const pawaPayResponse = await initiatePawaPayPayout({ payoutId, amount: String(Number(amount).toFixed(2)), currency, country: userCountry, correspondent, recipient: { type: "MSISDN", address: { value: e164Phone } }, statementDescription: "LTC Fast Track withdrawal", clientReferenceId: userId });
-    if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Withdrawal rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
-    const txn = await createTransaction(userId, payoutId, -Number(amount), "withdrawal", correspondent, e164Phone);
-    await updateWalletBalance(userId, -Number(amount));
+
+    // Reserve/deduct the balance before calling PawaPay.
+    const deducted = await pool.query(
+      `
+      UPDATE ltc_wallets
+      SET
+        balance = balance - $1,
+        "updatedAt" = $2
+      WHERE "userId" = $3
+        AND balance >= $1
+      RETURNING balance
+      `,
+      [Number(amount), now(), userId]
+    );
+
+    if (!deducted.rows[0]) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient balance",
+      });
+    }
+
+    let pawaPayResponse: PawaPayPayoutResponse;
+
+    try {
+      pawaPayResponse = await initiatePawaPayPayout({
+        payoutId,
+        amount: String(Number(amount).toFixed(2)),
+        currency,
+        country: userCountry,
+        correspondent,
+        recipient: {
+          type: "MSISDN",
+          address: {
+            value: e164Phone,
+          },
+        },
+        statementDescription: "LTC Fast Track withdrawal",
+        clientReferenceId: userId,
+        callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
+      });
+    } catch (error) {
+      // Refund the wallet if the provider request itself fails.
+      await updateWalletBalance(userId, Number(amount));
+      throw error;
+    }
+
+    if (pawaPayResponse.status === "REJECTED") {
+      await updateWalletBalance(userId, Number(amount));
+
+      return res.status(422).json({
+        success: false,
+        message:
+          pawaPayResponse.failureReason?.failureMessage ??
+          "Withdrawal rejected",
+        errorCode:
+          pawaPayResponse.failureReason?.failureCode ?? "REJECTED",
+      });
+    }
+
+    const txn = await createTransaction(
+      userId,
+      payoutId,
+      -Number(amount),
+      "withdrawal",
+      correspondent,
+      e164Phone
+    );
+
     await updateTransactionStatus(payoutId, "processing");
-    return res.json({ success: true, data: { withdrawalId: displayWithdrawalId, providerWithdrawalId: payoutId, transactionId: txn.id, status: "PROCESSING", amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, createdAt: pawaPayResponse.created ?? new Date().toISOString() } });
+
+    return res.json({
+      success: true,
+      data: {
+        withdrawalId: displayWithdrawalId,
+        providerWithdrawalId: payoutId,
+        transactionId: txn.id,
+        status: "PROCESSING",
+        amount: Number(amount),
+        phoneNumber: e164Phone,
+        provider: correspondent,
+        createdAt:
+          pawaPayResponse.created ?? new Date().toISOString(),
+      },
+    });
   } catch (error: any) {
     if (axios.isAxiosError(error)) return res.status(400).json({ success: false, message: "PawaPay error", details: error.response?.data });
     return res.status(500).json({ success: false, message: "Internal server error" });
@@ -1296,26 +1995,60 @@ app.post("/api/pickups", async (req: Request, res: Response) => {
 
     let operationalUserId: number;
 
-    if (operationalUser.rows[0]) {
-      operationalUserId = operationalUser.rows[0].id;
-    } else {
-      const newUser = await client.query(
-        `
-        INSERT INTO users
-          ("openId", name, phone, role)
-        VALUES
-          ($1, $2, $3, 'user')
-        RETURNING id
-        `,
-        [
-          openId,
-          userName ?? ltcUser.phoneNumber,
-          userPhone ?? ltcUser.phoneNumber,
-        ]
-      );
+if (operationalUser.rows[0]) {
+  operationalUserId = operationalUser.rows[0].id;
 
-      operationalUserId = newUser.rows[0].id;
-    }
+  await client.query(
+    `
+    UPDATE users
+    SET
+      "ltcUserId" = $1,
+      name = COALESCE($2, name),
+      phone = COALESCE($3, phone),
+      "updatedAt" = NOW(),
+      "lastSignedIn" = NOW()
+    WHERE id = $4
+    `,
+    [
+      ltcUser.id,
+      userName ?? ltcUser.name ?? ltcUser.phoneNumber,
+      userPhone ?? ltcUser.phoneNumber,
+      operationalUserId,
+    ]
+  );
+} else {
+  const newUser = await client.query<{ id: number }>(
+    `
+    INSERT INTO users
+      ("openId", "ltcUserId", name, phone, role)
+    VALUES
+      ($1, $2, $3, $4, 'user')
+    RETURNING id
+    `,
+    [
+      openId,
+      ltcUser.id,
+      userName ?? ltcUser.name ?? ltcUser.phoneNumber,
+      userPhone ?? ltcUser.phoneNumber,
+    ]
+  );
+
+  operationalUserId = newUser.rows[0].id;
+}
+
+    await client.query(
+     `
+     INSERT INTO customer_wallets (
+      "userId",
+      "totalBalance",
+      "rechargedBalance",
+      "referralBalance"
+     )
+     VALUES ($1, 0, 0, 0)
+     ON CONFLICT ("userId") DO NOTHING
+     `,
+     [operationalUserId]
+   );
 
     // ------------------------------------------------------------
     // 3. Resolve the zone
@@ -1401,7 +2134,7 @@ app.post("/api/pickups", async (req: Request, res: Response) => {
         longitude ?? null,
         wasteType ?? "residential",
         notes ?? null,
-        zoneId ?? String(operationalZoneId),
+        String(operationalZoneId),
         scheduledDate ?? null,
         scheduledTime ?? null,
         n,

@@ -30,7 +30,7 @@ const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "LTC Fast Track",
+  appName: "Ltc Fast Track",
   appSlug: "ltc-fast-track",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
@@ -50,7 +50,7 @@ const config: ExpoConfig = {
     },
   },
 
-  version: "1.0.0",
+  version: "1.0.1",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: env.scheme,
@@ -68,6 +68,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
+    versionCode: 2,
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? "./google-services.json",
     config: {
       googleMaps: {

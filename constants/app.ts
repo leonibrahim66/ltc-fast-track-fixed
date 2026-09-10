@@ -31,21 +31,21 @@ export const APP_CONFIG = {
 // Contact Information
 export const CONTACTS = {
   // Phone Numbers
-  supportPhone: "+260960500656",
+  supportPhone: "+260964600024",
   paymentPhone: "0960819993",
-  mainPhone: "+260960819993",
-  emergencyPhone: "+260960819993",
+  mainPhone: "+260974877892",
+  emergencyPhone: "+260974877892",
   
   // WhatsApp
-  whatsappSupport: "https://wa.me/260960500656",
+  whatsappSupport: "https://wa.me/260964600024",
   whatsappGroup: "https://chat.whatsapp.com/FYxhfg58ftVIJdLrp3L4Uf",
   whatsappChannel: "https://whatsapp.com/channel/0029VbBI2c16hENx0dnt593o",
-  whatsappBusinessNumber: "+260960819993",
+  whatsappBusinessNumber: "+2609646000024",
   
   // Email Addresses
-  emails: ["trashcash2025@gmail.com", "liquidmarketing99@gmail.com"],
-  supportEmail: "trashcash2025@gmail.com",
-  businessEmail: "liquidmarketing99@gmail.com",
+  emails: ["ltcfasttracklimited@gmail.com", "ltcfasttracklimited@gmail.com"],
+  supportEmail: "ltcfasttracklimited@gmail.com",
+  businessEmail: "ltcfasttracklimited@gmail.com",
   
   // Social Media
   facebook: "https://facebook.com/ltcfasttrack",
@@ -55,7 +55,7 @@ export const CONTACTS = {
   tiktok: "https://tiktok.com/@ltcfasttrack",
   
   // Office Location
-  officeAddress: "Plot 123, Cairo Road, Lusaka, Zambia",
+  officeAddress: "P.O BOX 337111 East Park Mall, Great East Road, Lusaka, Zambia",
   officeHours: "Monday - Friday: 8:00 AM - 5:00 PM",
   officeHoursSaturday: "Saturday: 8:00 AM - 1:00 PM",
   
