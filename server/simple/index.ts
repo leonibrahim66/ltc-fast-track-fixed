@@ -1378,7 +1378,7 @@ function currencyForCountry(c: string): string { return c === "TZA" ? "TZS" : "Z
 interface PawaPayDepositRequest { depositId: string; payer: { type: "MMO"; accountDetails: { phoneNumber: string; provider: string } }; amount: string; currency: string; statementDescription?: string; clientReferenceId?: string; customerMessage?: string; callbackUrl?: string; }
 interface PawaPayDepositResponse { depositId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
 interface PawaPayDepositStatusResponse { depositId: string; status: "ACCEPTED" | "COMPLETED" | "FAILED" | "DUPLICATE_IGNORED"; amount?: string; currency?: string; correspondent?: string; payer?: { type: string; accountDetails: { phoneNumber: string } }; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
-interface PawaPayPayoutRequest { payoutId: string; amount: string; currency: string; country: string; correspondent: string; recipient: { type: "MSISDN"; address: { value: string } }; statementDescription?: string; clientReferenceId?: string; callbackUrl?: string; }
+interface PawaPayPayoutRequest { payoutId: string; amount: string; currency: string; country: string; correspondent: string; recipient: { type: "MSISDN"; address: { value: string } };  customerTimestamp: string; statementDescription?: string; clientReferenceId?: string; callbackUrl?: string; }
 interface PawaPayPayoutResponse { payoutId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
 
 const pawaPayHeaders = () => ({ Authorization: `Bearer ${process.env.PAWAPAY_PAYOUT_TOKEN || process.env.PAWAPAY_TOKEN || process.env.PAWAPAY_API_KEY}`, "Content-Type": "application/json" });
@@ -1866,6 +1866,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
             value: e164Phone,
           },
         },
+        customerTimestamp: new Date().toISOString(),
         statementDescription: "LTC Fast Track withdrawal",
         clientReferenceId: userId,
         callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
