@@ -1378,7 +1378,23 @@ function currencyForCountry(c: string): string { return c === "TZA" ? "TZS" : "Z
 interface PawaPayDepositRequest { depositId: string; payer: { type: "MMO"; accountDetails: { phoneNumber: string; provider: string } }; amount: string; currency: string; statementDescription?: string; clientReferenceId?: string; customerMessage?: string; callbackUrl?: string; }
 interface PawaPayDepositResponse { depositId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
 interface PawaPayDepositStatusResponse { depositId: string; status: "ACCEPTED" | "COMPLETED" | "FAILED" | "DUPLICATE_IGNORED"; amount?: string; currency?: string; correspondent?: string; payer?: { type: string; accountDetails: { phoneNumber: string } }; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
-interface PawaPayPayoutRequest { payoutId: string; amount: string; currency: string; country: string; correspondent: string; recipient: { type: "MSISDN"; address: { value: string } };  customerTimestamp: string; statementDescription?: string; clientReferenceId?: string; callbackUrl?: string; }
+interface PawaPayPayoutRequest {
+  payoutId: string;
+  amount: string;
+  currency: string;
+  country: string;
+  correspondent: string;
+  recipient: {
+    type: "MSISDN";
+    address: {
+      value: string;
+    };
+  };
+  customerTimestamp: string;
+  statementDescription?: string;
+  clientReferenceId?: string;
+  callbackUrl?: string;
+}
 interface PawaPayPayoutResponse { payoutId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
 
 const pawaPayHeaders = () => ({ Authorization: `Bearer ${process.env.PAWAPAY_PAYOUT_TOKEN || process.env.PAWAPAY_TOKEN || process.env.PAWAPAY_API_KEY}`, "Content-Type": "application/json" });
@@ -1391,8 +1407,36 @@ async function fetchPawaPayDepositStatus(depositId: string): Promise<PawaPayDepo
   try { const r = await axios.get<PawaPayDepositStatusResponse>(`${PAWAPAY_BASE_URL}/v1/deposits/${depositId}`, { headers: pawaPayHeaders(), timeout: 15000 }); return r.data; }
   catch (e: any) { console.error("PawaPay fetch error:", e.response?.data || e.message); return null; }
 }
-async function initiatePawaPayPayout(params: PawaPayPayoutRequest): Promise<PawaPayPayoutResponse> {
-  const r = await axios.post<PawaPayPayoutResponse>(`${PAWAPAY_BASE_URL}/v1/payouts`, params, { headers: pawaPayHeaders(), timeout: 30_000 });
+async function initiatePawaPayPayout(
+  params: PawaPayPayoutRequest
+): Promise<PawaPayPayoutResponse> {
+  const payload = {
+    payoutId: params.payoutId,
+    amount: params.amount,
+    currency: params.currency,
+    country: params.country,
+    correspondent: params.correspondent,
+    recipient: params.recipient,
+    customerTimestamp: params.customerTimestamp,
+    statementDescription: params.statementDescription,
+    clientReferenceId: params.clientReferenceId,
+    callbackUrl: params.callbackUrl,
+  };
+
+  console.log(
+    "PawaPay payout payload:",
+    JSON.stringify(payload, null, 2)
+  );
+
+  const r = await axios.post<PawaPayPayoutResponse>(
+    `${PAWAPAY_BASE_URL}/v1/payouts`,
+    payload,
+    {
+      headers: pawaPayHeaders(),
+      timeout: 30_000,
+    }
+  );
+
   return r.data;
 }
 
