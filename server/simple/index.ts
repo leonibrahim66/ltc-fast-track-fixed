@@ -1437,6 +1437,11 @@ async function initiatePawaPayPayout(
     }
   );
 
+  console.log("PawaPay payout response:", {
+    status: r.status,
+    data: r.data,
+  });
+
   return r.data;
 }
 
@@ -1915,26 +1920,20 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
         clientReferenceId: userId,
         callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
       });
-        } catch (error: any) {
-      console.error("PawaPay withdrawal request failed:", {
-        message: error?.message,
-        status: error?.response?.status,
-        data: error?.response?.data,
-        method: error?.config?.method,
-        url: error?.config?.url,
-        payoutId,
-        amount: String(Number(amount).toFixed(2)),
-        currency,
-        country: userCountry,
-        correspondent,
-        phone: e164Phone,
-      });
+       } catch (error: any) {
+  console.error("PawaPay withdrawal request failed:", {
+    message: error?.message,
+    status: error?.response?.status,
+    data: error?.response?.data,
+    headers: error?.response?.headers,
+    method: error?.config?.method,
+    url: error?.config?.url,
+  });
 
-      // Refund the wallet if the provider request itself fails.
-      await updateWalletBalance(userId, Number(amount));
+  await updateWalletBalance(userId, Number(amount));
 
-      throw error;
-    }
+  throw error;
+}
 
     if (pawaPayResponse.status === "REJECTED") {
       await updateWalletBalance(userId, Number(amount));
