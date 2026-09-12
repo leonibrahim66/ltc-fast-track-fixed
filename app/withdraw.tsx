@@ -154,10 +154,23 @@ export default function WithdrawScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error: any) {
-      Alert.alert("Withdrawal Failed", error.message || "Failed to process withdrawal");
-      if (Platform.OS !== "web") {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      }
+  console.error("Withdrawal request failed:", error);
+
+  const errorMessage =
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.response?.data?.details ||
+    error?.data?.message ||
+    error?.message ||
+    "Failed to process withdrawal";
+
+  Alert.alert("Withdrawal Failed", String(errorMessage));
+
+  if (Platform.OS !== "web") {
+    Haptics.notificationAsync(
+      Haptics.NotificationFeedbackType.Error
+    );
+  }
     } finally {
       setIsProcessing(false);
     }

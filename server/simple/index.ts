@@ -1870,9 +1870,24 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
         clientReferenceId: userId,
         callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
       });
-    } catch (error) {
+        } catch (error: any) {
+      console.error("PawaPay withdrawal request failed:", {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+        method: error?.config?.method,
+        url: error?.config?.url,
+        payoutId,
+        amount: String(Number(amount).toFixed(2)),
+        currency,
+        country: userCountry,
+        correspondent,
+        phone: e164Phone,
+      });
+
       // Refund the wallet if the provider request itself fails.
       await updateWalletBalance(userId, Number(amount));
+
       throw error;
     }
 
@@ -1914,9 +1929,26 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
           pawaPayResponse.created ?? new Date().toISOString(),
       },
     });
-  } catch (error: any) {
-    if (axios.isAxiosError(error)) return res.status(400).json({ success: false, message: "PawaPay error", details: error.response?.data });
-    return res.status(500).json({ success: false, message: "Internal server error" });
+   } catch (error: any) {
+    console.error("Withdrawal endpoint failed:", {
+      message: error?.message,
+      status: error?.response?.status,
+      data: error?.response?.data,
+      stack: error?.stack,
+    });
+
+    if (axios.isAxiosError(error)) {
+      return res.status(400).json({
+        success: false,
+        message: "PawaPay error",
+        details: error.response?.data,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
