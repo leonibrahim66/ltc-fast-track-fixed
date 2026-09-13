@@ -1904,22 +1904,22 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
 
     try {
       pawaPayResponse = await initiatePawaPayPayout({
-        payoutId,
-        amount: String(Number(amount).toFixed(2)),
-        currency,
-        country: userCountry,
-        correspondent,
-        recipient: {
-          type: "MSISDN",
-          address: {
-            value: e164Phone,
-          },
-        },
-        customerTimestamp: new Date().toISOString(),
-        statementDescription: "LTC Fast Track withdrawal",
-        clientReferenceId: userId,
-        callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
-      });
+  payoutId,
+  amount: String(Number(amount).toFixed(2)),
+  currency,
+  country: userCountry,
+  correspondent,
+  recipient: {
+    type: "MSISDN",
+    address: {
+      value: e164Phone,
+    },
+  },
+  customerTimestamp: new Date().toISOString(),
+  statementDescription: "LTC withdrawal",
+  clientReferenceId: userId,
+  callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
+});
        } catch (error: any) {
   console.error("PawaPay withdrawal request failed:", {
     message: error?.message,
