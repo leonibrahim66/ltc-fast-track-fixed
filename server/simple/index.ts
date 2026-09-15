@@ -1780,33 +1780,62 @@ app.get("/api/users/:userId", async (req: Request, res: Response) => {
 
 app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
   const { amount, phoneNumber, userId: bodyUserId, country: bodyCountry } = req.body;
-  const countryCode = bodyCountry ?? (phoneNumber?.replace(/^\+/, "").startsWith("255") ? "TZA" : "ZMB");
+  const countryCode = bodyCountry ?? (
+    phoneNumber?.replace(/^\+/, "").startsWith("255") ? "TZA" : "ZMB"
+  );
+
+  console.log("PawaPay request received", {
+    userId: bodyUserId,
+    amount,
+    phoneNumber,
+    country: countryCode,
+  });
+
   try {
-    if (!amount || Number(amount) <= 0) return res.status(400).json({ success: false, message: "Invalid amount", errorCode: "INVALID_AMOUNT" });
-    if (!phoneNumber) return res.status(400).json({ success: false, message: "Missing phoneNumber", errorCode: "MISSING_PHONE" });
-    const user = bodyUserId ? ((await getUserById(bodyUserId)) ?? (await getOrCreateUser(phoneNumber, { country: countryCode }))) : await getOrCreateUser(phoneNumber, { country: countryCode });
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid amount",
+        errorCode: "INVALID_AMOUNT",
+      });
+    }
+
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing phoneNumber",
+        errorCode: "MISSING_PHONE",
+      });
+    }
+
+    const user = bodyUserId
+      ? ((await getUserById(bodyUserId)) ??
+        (await getOrCreateUser(phoneNumber, { country: countryCode })))
+      : await getOrCreateUser(phoneNumber, { country: countryCode });
+
     await getOrCreateWallet(user.id);
     const operationalUserId = await getOrCreateOperationalUser(user);
     await getOrCreateCustomerWallet(operationalUserId);
+
     const e164Phone = toE164(countryCode, phoneNumber);
     const correspondent = detectNetwork(countryCode, phoneNumber);
     const currency = currencyForCountry(countryCode);
-   const depositId = uuidv4();
+    const depositId = uuidv4();
 
-const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(
-  Math.random() * 9999
-)}`;
+    const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(
+      Math.random() * 9999
+    )}`;
 
-// Create the local transaction BEFORE calling PawaPay.
-// This prevents a callback race condition.
-const transaction = await createTransaction(
-  user.id,
-  depositId,
-  Number(amount),
-  "deposit",
-  correspondent,
-  e164Phone
-);
+    // Create the local transaction BEFORE calling PawaPay.
+    // This prevents a callback race condition.
+    const transaction = await createTransaction(
+      user.id,
+      depositId,
+      Number(amount),
+      "deposit",
+      correspondent,
+      e164Phone
+    );
 
 let pawaPayResponse: PawaPayDepositResponse;
 
@@ -1898,52 +1927,41 @@ app.get(
 
       if (verify) {
         const liveData =
-  transaction.type === "withdrawal"
-    ? await fetchPawaPayPayoutStatus(depositId)
-    : await fetchPawaPayDepositStatus(depositId);
+          transaction.type === "withdrawal"
+            ? await fetchPawaPayPayoutStatus(depositId)
+            : await fetchPawaPayDepositStatus(depositId);
 
         if (liveData) {
-  liveStatus = liveData.status;
+          liveStatus = liveData.status;
 
-  if (transaction.type === "deposit") {
-    if (liveData.status === "COMPLETED") {
-      await completeDepositTransaction(
-        depositId,
-        Number(liveData.amount ?? transaction.amount)
-      );
-    } else if (
-      liveData.status === "FAILED" ||
-      liveData.status === "REJECTED"
-    ) {
-      await updateTransactionStatus(
-        depositId,
-        "failed"
-      );
-    } else if (liveData.status === "ACCEPTED") {
-      await updateTransactionStatus(
-        depositId,
-        "processing"
-      );
-    }
-  } else if (transaction.type === "withdrawal") {
-    if (
-      liveData.status === "FAILED" ||
-      liveData.status === "REJECTED"
-    ) {
-      await failWithdrawalTransaction(depositId);
-    } else if (liveData.status === "COMPLETED") {
-      await updateTransactionStatus(
-        depositId,
-        "completed"
-      );
-    } else if (liveData.status === "ACCEPTED") {
-      await updateTransactionStatus(
-        depositId,
-        "processing"
-      );
-    }
-  }
-}
+          if (transaction.type === "deposit") {
+            if (liveData.status === "COMPLETED") {
+              await completeDepositTransaction(
+                depositId,
+                Number(liveData.amount ?? transaction.amount)
+              );
+            } else if (
+              liveData.status === "FAILED" ||
+              liveData.status === "REJECTED"
+            ) {
+              await updateTransactionStatus(depositId, "failed");
+            } else if (liveData.status === "ACCEPTED") {
+              await updateTransactionStatus(depositId, "processing");
+            }
+          } else if (transaction.type === "withdrawal") {
+            if (
+              liveData.status === "FAILED" ||
+              liveData.status === "REJECTED"
+            ) {
+              await failWithdrawalTransaction(depositId);
+            } else if (liveData.status === "COMPLETED") {
+              await updateTransactionStatus(depositId, "completed");
+            } else if (liveData.status === "ACCEPTED") {
+              await updateTransactionStatus(depositId, "processing");
+            }
+          }
+        }
+      }
 
       const updated =
         (await getTransactionByDepositId(depositId)) ?? transaction;
