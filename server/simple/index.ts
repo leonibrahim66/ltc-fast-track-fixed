@@ -1173,6 +1173,76 @@ async function updateTransactionStatus(depositId: string, status: string): Promi
   await pool.query(`UPDATE ltc_transactions SET status = $1, "updatedAt" = $2 WHERE "depositId" = $3`, [status, now(), depositId]);
 }
 
+async function failWithdrawalTransaction(
+  depositId: string
+): Promise<boolean> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query<Transaction>(
+      `
+      SELECT *
+      FROM ltc_transactions
+      WHERE "depositId" = $1
+      FOR UPDATE
+      `,
+      [depositId]
+    );
+
+    const transaction = result.rows[0];
+
+    if (!transaction) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    if (
+      transaction.type !== "withdrawal" ||
+      transaction.status === "failed" ||
+      transaction.status === "completed"
+    ) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    await client.query(
+      `
+      UPDATE ltc_wallets
+      SET
+        balance = balance + $1,
+        "updatedAt" = $2
+      WHERE "userId" = $3
+      `,
+      [
+        Math.abs(Number(transaction.amount)),
+        now(),
+        transaction.userId,
+      ]
+    );
+
+    await client.query(
+      `
+      UPDATE ltc_transactions
+      SET
+        status = 'failed',
+        "updatedAt" = $1
+      WHERE "depositId" = $2
+      `,
+      [now(), depositId]
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function completeDepositTransaction(
   depositId: string,
   amount: number
@@ -1345,14 +1415,26 @@ async function unlinkAccount(userId: string): Promise<void> {
   await pool.query(`UPDATE ltc_linked_accounts SET "isActive" = 0, "updatedAt" = $1 WHERE "userId" = $2`, [now(), userId]);
 }
 
+function isValidMobilePhone(phone: unknown): phone is string {
+  if (typeof phone !== "string") return false;
+
+  const normalized = phone
+    .replace(/\s+/g, "")
+    .replace(/^\+/, "");
+
+  return /^(260|255|0)\d{9}$/.test(normalized);
+}
+
 function detectZambiaNetwork(rawPhone: string): string {
   let phone = rawPhone.replace(/\s+/g, "").replace(/^\+/, "");
   if (phone.startsWith("260")) phone = "0" + phone.slice(3);
   if (!phone.startsWith("0")) phone = "0" + phone;
   const p3 = phone.substring(0, 3);
+
   if (p3 === "096" || p3 === "076") return "MTN_MOMO_ZMB";
   if (p3 === "097" || p3 === "077") return "AIRTEL_OAPI_ZMB";
   if (p3 === "095" || p3 === "075") return "ZAMTEL_ZMB";
+
   return "MTN_MOMO_ZMB";
 }
 
@@ -1375,9 +1457,46 @@ function toE164(c: string, p: string): string {
 }
 function currencyForCountry(c: string): string { return c === "TZA" ? "TZS" : "ZMW"; }
 
-interface PawaPayDepositRequest { depositId: string; payer: { type: "MMO"; accountDetails: { phoneNumber: string; provider: string } }; amount: string; currency: string; statementDescription?: string; clientReferenceId?: string; customerMessage?: string; callbackUrl?: string; }
+interface PawaPayDepositRequest {
+  depositId: string;
+  payer: {
+    type: "MMO";
+    accountDetails: {
+      phoneNumber: string;
+      provider: string;
+    };
+  };
+  amount: string;
+  currency: string;
+  statementDescription: string;
+  clientReferenceId: string;
+  callbackUrl: string;
+  customerMessage?: string;
+}
 interface PawaPayDepositResponse { depositId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
-interface PawaPayDepositStatusResponse { depositId: string; status: "ACCEPTED" | "COMPLETED" | "FAILED" | "DUPLICATE_IGNORED"; amount?: string; currency?: string; correspondent?: string; payer?: { type: string; accountDetails: { phoneNumber: string } }; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
+interface PawaPayDepositStatusResponse {
+  depositId: string;
+  status:
+    | "ACCEPTED"
+    | "COMPLETED"
+    | "FAILED"
+    | "REJECTED"
+    | "DUPLICATE_IGNORED";
+  amount?: string;
+  currency?: string;
+  correspondent?: string;
+  payer?: {
+    type: string;
+    accountDetails: {
+      phoneNumber: string;
+    };
+  };
+  created?: string;
+  failureReason?: {
+    failureCode: string;
+    failureMessage: string;
+  };
+}
 interface PawaPayPayoutRequest {
   payoutId: string;
   amount: string;
@@ -1396,17 +1515,111 @@ interface PawaPayPayoutRequest {
   callbackUrl?: string;
 }
 interface PawaPayPayoutResponse { payoutId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }
-
+interface PawaPayPayoutStatusResponse {
+  payoutId: string;
+  status:
+    | "ACCEPTED"
+    | "COMPLETED"
+    | "FAILED"
+    | "REJECTED"
+    | "DUPLICATE_IGNORED";
+  amount?: string;
+  currency?: string;
+  correspondent?: string;
+  created?: string;
+  failureReason?: {
+    failureCode: string;
+    failureMessage: string;
+  };
+}
 const pawaPayHeaders = () => ({ Authorization: `Bearer ${process.env.PAWAPAY_PAYOUT_TOKEN || process.env.PAWAPAY_TOKEN || process.env.PAWAPAY_API_KEY}`, "Content-Type": "application/json" });
 
-async function initiatePawaPayDeposit(params: PawaPayDepositRequest): Promise<PawaPayDepositResponse> {
-  const r = await axios.post<PawaPayDepositResponse>(`${PAWAPAY_BASE_URL}/v2/deposits`, params, { headers: pawaPayHeaders(), timeout: 30_000 });
-  return r.data;
+async function initiatePawaPayDeposit(
+  params: PawaPayDepositRequest
+): Promise<PawaPayDepositResponse> {
+  console.log("PawaPay deposit payload:", JSON.stringify(params, null, 2));
+
+  try {
+    const r = await axios.post<PawaPayDepositResponse>(
+      `${PAWAPAY_BASE_URL}/v2/deposits`,
+      params,
+      {
+        headers: pawaPayHeaders(),
+        timeout: 30_000,
+      }
+    );
+
+    console.log("PawaPay deposit response:", {
+      status: r.status,
+      data: r.data,
+    });
+
+    return r.data;
+    } catch (error: any) {
+    console.error("PawaPay deposit request failed:", {
+      status: error?.response?.status,
+      data: error?.response?.data,
+      message: error?.message,
+      url: error?.config?.url,
+      method: error?.config?.method,
+    });
+
+    throw error;
+  }
 }
-async function fetchPawaPayDepositStatus(depositId: string): Promise<PawaPayDepositStatusResponse | null> {
-  try { const r = await axios.get<PawaPayDepositStatusResponse>(`${PAWAPAY_BASE_URL}/v1/deposits/${depositId}`, { headers: pawaPayHeaders(), timeout: 15000 }); return r.data; }
-  catch (e: any) { console.error("PawaPay fetch error:", e.response?.data || e.message); return null; }
+ 
+async function fetchPawaPayDepositStatus(
+  depositId: string
+): Promise<PawaPayDepositStatusResponse | null> {
+  try {
+    const response =
+      await axios.get<PawaPayDepositStatusResponse>(
+        `${PAWAPAY_BASE_URL}/v1/deposits/${depositId}`,
+        {
+          headers: pawaPayHeaders(),
+          timeout: 15_000,
+        }
+      );
+
+    return response.data;
+  } catch (error: any) {
+    console.error("Unable to verify deposit with PawaPay:", {
+      depositId,
+      status: error?.response?.status,
+      data: error?.response?.data,
+      message: error?.message,
+    });
+
+    return null;
+  }
 }
+
+async function fetchPawaPayPayoutStatus(
+  payoutId: string
+): Promise<PawaPayPayoutStatusResponse | null> {
+  try {
+    const response =
+      await axios.get<PawaPayPayoutStatusResponse>(
+        `${PAWAPAY_BASE_URL}/v1/payouts/${payoutId}`,
+        {
+          headers: pawaPayHeaders(),
+          timeout: 15_000,
+        }
+      );
+
+    return response.data;
+  } catch (error: any) {
+    console.error("Unable to verify payout with PawaPay:", {
+      payoutId,
+      status: error?.response?.status,
+      data: error?.response?.data,
+      message: error?.message,
+    });
+
+    return null;
+  }
+}
+
 async function initiatePawaPayPayout(
   params: PawaPayPayoutRequest
 ): Promise<PawaPayPayoutResponse> {
@@ -1449,16 +1662,43 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(express.raw({ type: "application/octet-stream", limit: "10mb" }));
 
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS ??
+  "http://localhost:3000"
+)
+  .split(",")
+  .map((origin) => origin.trim());
+
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
-  if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Content-Digest");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  if (req.method === "OPTIONS") { res.sendStatus(200); return; }
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization, Content-Digest"
+  );
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
   next();
 });
-app.use((req: Request, _res: Response, next: NextFunction) => { log("INFO", `${req.method} ${req.path}`); next(); });
+
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  log("INFO", `${req.method} ${req.path}`);
+  next();
+});
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, env: NODE_ENV, pawapay: PAWAPAY_API_KEY ? "configured" : "missing", timestamp: new Date().toISOString() }));
 
@@ -1474,12 +1714,13 @@ app.post("/api/users", async (req: Request, res: Response) => {
       fullAddress,
     } = req.body;
 
-    if (!phoneNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing phoneNumber",
-      });
-    }
+    if (!isValidMobilePhone(phoneNumber)) {
+  return res.status(400).json({
+    success: false,
+    message: "Invalid phone number",
+    errorCode: "INVALID_PHONE",
+  });
+}
 
     console.log("Creating user:", {
       phoneNumber,
@@ -1550,29 +1791,90 @@ app.post("/api/payments/pawapay", async (req: Request, res: Response) => {
     const e164Phone = toE164(countryCode, phoneNumber);
     const correspondent = detectNetwork(countryCode, phoneNumber);
     const currency = currencyForCountry(countryCode);
-    const depositId = uuidv4();
-    const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-    const pawaPayResponse = await initiatePawaPayDeposit({
-      depositId,
-      payer: {
-        type: "MMO",
-        accountDetails: {
-          phoneNumber: e164Phone,
-          provider: correspondent,
-        },
+   const depositId = uuidv4();
+
+const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(
+  Math.random() * 9999
+)}`;
+
+// Create the local transaction BEFORE calling PawaPay.
+// This prevents a callback race condition.
+const transaction = await createTransaction(
+  user.id,
+  depositId,
+  Number(amount),
+  "deposit",
+  correspondent,
+  e164Phone
+);
+
+let pawaPayResponse: PawaPayDepositResponse;
+
+try {
+  pawaPayResponse = await initiatePawaPayDeposit({
+    depositId,
+    payer: {
+      type: "MMO",
+      accountDetails: {
+        phoneNumber: e164Phone,
+        provider: correspondent,
       },
-      amount: String(Number(amount).toFixed(2)),
-      currency,
-      clientReferenceId: user.id,
-      customerMessage: "LTC Fast Track payment",
-      callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
-    });
-    if (pawaPayResponse.status === "REJECTED") return res.status(422).json({ success: false, message: pawaPayResponse.failureReason?.failureMessage ?? "Payment rejected", errorCode: pawaPayResponse.failureReason?.failureCode ?? "REJECTED" });
-    const transaction = await createTransaction(user.id, depositId, Number(amount), "deposit", correspondent, e164Phone);
+    },
+    amount: String(Number(amount).toFixed(2)),
+    currency,
+    statementDescription: "LTC deposit",
+    customerMessage: "LTC deposit",
+    clientReferenceId: user.id,
+    callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
+  });
+} catch (error) {
+  await updateTransactionStatus(depositId, "failed");
+  throw error;
+}
+
+if (pawaPayResponse.status === "REJECTED") {
+  await updateTransactionStatus(depositId, "failed");
+
+  return res.status(422).json({
+    success: false,
+    message:
+      pawaPayResponse.failureReason?.failureMessage ??
+      "Payment rejected",
+    errorCode:
+      pawaPayResponse.failureReason?.failureCode ?? "REJECTED",
+  });
+}
     return res.status(201).json({ success: true, data: { depositId, displayDepositId, providerDepositId: depositId, status: pawaPayResponse.status, amount: Number(amount), phoneNumber: e164Phone, provider: correspondent, userId: user.id, transactionId: transaction.id, createdAt: pawaPayResponse.created ?? new Date().toISOString() }, timestamp: new Date().toISOString() });
-  } catch (error: any) {
-    const msg = axios.isAxiosError(error) ? error.message : (error instanceof Error ? error.message : "Internal server error");
-    return res.status(500).json({ success: false, message: msg, errorCode: "PAWAPAY_ERROR", details: axios.isAxiosError(error) ? error.response?.data : null });
+   } catch (error: any) {
+    console.error("POST /api/payments/pawapay failed:", {
+      message: error?.message,
+      status: error?.response?.status,
+      data: error?.response?.data,
+      stack: error?.stack,
+    });
+
+    if (axios.isAxiosError(error)) {
+      return res.status(error.response?.status ?? 502).json({
+        success: false,
+        message:
+          error.response?.data?.message ??
+          error.response?.data?.failureReason?.failureMessage ??
+          "PawaPay deposit request failed",
+        errorCode:
+          error.response?.data?.errorCode ??
+          error.response?.data?.failureReason?.failureCode ??
+          "PAWAPAY_ERROR",
+        details: error.response?.data ?? null,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Internal server error",
+    });
   }
 });
 
@@ -1595,34 +1897,53 @@ app.get(
       let liveStatus: string | undefined;
 
       if (verify) {
-        const liveData = await fetchPawaPayDepositStatus(depositId);
+        const liveData =
+  transaction.type === "withdrawal"
+    ? await fetchPawaPayPayoutStatus(depositId)
+    : await fetchPawaPayDepositStatus(depositId);
 
         if (liveData) {
-          liveStatus = liveData.status;
+  liveStatus = liveData.status;
 
-          if (liveData.status === "COMPLETED") {
-            await completeDepositTransaction(
-              depositId,
-              Number(liveData.amount ?? transaction.amount)
-            );
-          } else if (liveData.status === "FAILED") {
-            await updateTransactionStatus(depositId, "failed");
-          } else if (
-            liveData.status === "ACCEPTED" &&
-            Date.now() -
-              new Date(transaction.createdAt).getTime() >
-              60000
-          ) {
-            await updateTransactionStatus(depositId, "failed");
-          }
-        } else if (
-          Date.now() -
-            new Date(transaction.createdAt).getTime() >
-          60000
-        ) {
-          await updateTransactionStatus(depositId, "failed");
-        }
-      }
+  if (transaction.type === "deposit") {
+    if (liveData.status === "COMPLETED") {
+      await completeDepositTransaction(
+        depositId,
+        Number(liveData.amount ?? transaction.amount)
+      );
+    } else if (
+      liveData.status === "FAILED" ||
+      liveData.status === "REJECTED"
+    ) {
+      await updateTransactionStatus(
+        depositId,
+        "failed"
+      );
+    } else if (liveData.status === "ACCEPTED") {
+      await updateTransactionStatus(
+        depositId,
+        "processing"
+      );
+    }
+  } else if (transaction.type === "withdrawal") {
+    if (
+      liveData.status === "FAILED" ||
+      liveData.status === "REJECTED"
+    ) {
+      await failWithdrawalTransaction(depositId);
+    } else if (liveData.status === "COMPLETED") {
+      await updateTransactionStatus(
+        depositId,
+        "completed"
+      );
+    } else if (liveData.status === "ACCEPTED") {
+      await updateTransactionStatus(
+        depositId,
+        "processing"
+      );
+    }
+  }
+}
 
       const updated =
         (await getTransactionByDepositId(depositId)) ?? transaction;
@@ -1655,37 +1976,173 @@ app.get(
   }
 );
 
-app.post("/api/payments/pawapay/callback", async (req: Request, res: Response) => {
-  try {
-    const payload = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body;
-    const referenceId = (payload["depositId"] || payload["payoutId"] || payload["refundId"]) as string;
-    const status = payload["status"]; const amount = payload["amount"];
-    if (!referenceId || !status) return res.status(400).json({ success: false, message: "Missing referenceId or status" });
-    const transaction = await getTransactionByDepositId(referenceId);
-    if (!transaction) return res.json({ success: true, data: { received: true, referenceId } });
-    if (transaction.status === "completed" || transaction.status === "failed") return res.json({ success: true, data: { received: true, referenceId } });
-    if (status === "COMPLETED") {
-  if (transaction.type === "deposit") {
-    await completeDepositTransaction(
-      referenceId,
-      Number(amount ?? transaction.amount)
-    );
-  } else {
-    await updateTransactionStatus(referenceId, "completed");
-  }
-} else if (status === "FAILED") {
-  if (transaction.type === "withdrawal") {
-    await updateWalletBalance(
-      transaction.userId,
-      Math.abs(Number(transaction.amount))
-    );
-  }
+app.post(
+  "/api/payments/pawapay/callback",
+  async (req: Request, res: Response) => {
+    try {
+      const payload = Buffer.isBuffer(req.body)
+        ? JSON.parse(req.body.toString())
+        : req.body;
 
-  await updateTransactionStatus(referenceId, "failed");
-}
-    return res.json({ success: true, data: { received: true, referenceId } });
-  } catch (error) { return res.status(500).json({ success: false, message: error instanceof Error ? error.message : "Callback error" }); }
-});
+      const referenceId = (
+        payload["depositId"] ||
+        payload["payoutId"] ||
+        payload["refundId"]
+      ) as string;
+
+      const callbackStatus = payload["status"] as string;
+
+      if (!referenceId || !callbackStatus) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing referenceId or status",
+        });
+      }
+
+      const transaction =
+        await getTransactionByDepositId(referenceId);
+
+      if (!transaction) {
+        console.error(
+          "Callback received before transaction existed:",
+          {
+            referenceId,
+            payload,
+          }
+        );
+
+        return res.json({
+          success: true,
+          data: {
+            received: true,
+            referenceId,
+            transactionFound: false,
+          },
+        });
+      }
+
+      if (
+        transaction.status === "completed" ||
+        transaction.status === "failed"
+      ) {
+        return res.json({
+          success: true,
+          data: {
+            received: true,
+            referenceId,
+            alreadyProcessed: true,
+          },
+        });
+      }
+
+      // Deposit: verify directly with PawaPay.
+      if (transaction.type === "deposit") {
+        const verifiedPayment =
+          await fetchPawaPayDepositStatus(referenceId);
+
+        if (!verifiedPayment) {
+          return res.status(503).json({
+            success: false,
+            message: "Unable to verify payment with PawaPay",
+          });
+        }
+                if (verifiedPayment.status === "COMPLETED") {
+          await completeDepositTransaction(
+            referenceId,
+            Number(verifiedPayment.amount ?? transaction.amount)
+          );
+        } else if (
+          verifiedPayment.status === "FAILED" ||
+          verifiedPayment.status === "REJECTED"
+        ) {
+          await updateTransactionStatus(
+            referenceId,
+            "failed"
+          );
+        } else if (
+          verifiedPayment.status === "ACCEPTED"
+        ) {
+          await updateTransactionStatus(
+            referenceId,
+            "processing"
+          );
+        }
+        return res.json({
+          success: true,
+          data: {
+            received: true,
+            referenceId,
+            callbackStatus,
+            verifiedStatus: verifiedPayment.status,
+          },
+        });
+      }
+
+      // Withdrawal: verify directly with PawaPay.
+      if (transaction.type === "withdrawal") {
+        const verifiedPayout =
+          await fetchPawaPayPayoutStatus(referenceId);
+
+        if (!verifiedPayout) {
+          return res.status(503).json({
+            success: false,
+            message: "Unable to verify payout with PawaPay",
+          });
+        }
+
+        if (
+          verifiedPayout.status === "FAILED" ||
+          verifiedPayout.status === "REJECTED"
+        ) {
+          await failWithdrawalTransaction(referenceId);
+        } else if (
+          verifiedPayout.status === "COMPLETED"
+        ) {
+          await updateTransactionStatus(
+            referenceId,
+            "completed"
+          );
+        } else if (
+          verifiedPayout.status === "ACCEPTED"
+        ) {
+          await updateTransactionStatus(
+            referenceId,
+            "processing"
+          );
+        }
+
+        return res.json({
+          success: true,
+          data: {
+            received: true,
+            referenceId,
+            callbackStatus,
+            verifiedStatus: verifiedPayout.status,
+          },
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          received: true,
+          referenceId,
+          message: "Transaction type not processed",
+        },
+      });
+    } catch (error) {
+      console.error("PawaPay callback error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Callback processing failed",
+      });
+    }
+  }
+);
 
 app.get("/api/wallet/:userId", async (req: Request, res: Response) => {
   try {
@@ -1835,12 +2292,34 @@ app.post("/api/linked-accounts/:userId/unlink", async (req: Request, res: Respon
 
 app.post("/api/withdrawals", async (req: Request, res: Response) => {
   const { userId, amount, withdrawalPin } = req.body;
+
   try {
-    if (!userId || !amount || !withdrawalPin) return res.status(400).json({ success: false, message: "Missing required fields" });
-    if (Number(amount) <= 0) return res.status(400).json({ success: false, message: "Amount must be > 0" });
+    if (!userId || !amount || !withdrawalPin) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+      });
+    }
+
+    const withdrawalAmount = Number(amount);
+
+    if (!Number.isFinite(withdrawalAmount) || withdrawalAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Amount must be greater than zero",
+      });
+    }
+
     const user = await getUserById(userId);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-     const wallet = await getWalletByUserId(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const wallet = await getWalletByUserId(userId);
 
     if (!wallet) {
       return res.status(400).json({
@@ -1869,17 +2348,21 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
         message: "Invalid withdrawal PIN",
       });
     }
-       const payoutId = uuidv4();
+
+    const payoutId = uuidv4();
     const displayWithdrawalId = `LTC-WD-${Date.now()}-${Math.floor(
       Math.random() * 9999
     )}`;
 
     const userCountry = user.country ?? "ZMB";
     const e164Phone = toE164(userCountry, linked.phoneNumber);
-    const correspondent = detectNetwork(userCountry, linked.phoneNumber);
+    const correspondent = detectNetwork(
+      userCountry,
+      linked.phoneNumber
+    );
     const currency = currencyForCountry(userCountry);
 
-    // Reserve/deduct the balance before calling PawaPay.
+    // Deduct/reserve funds atomically.
     const deducted = await pool.query(
       `
       UPDATE ltc_wallets
@@ -1890,7 +2373,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
         AND balance >= $1
       RETURNING balance
       `,
-      [Number(amount), now(), userId]
+      [withdrawalAmount, now(), userId]
     );
 
     if (!deducted.rows[0]) {
@@ -1900,43 +2383,47 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
       });
     }
 
+    // Create the transaction before calling PawaPay.
+    const transaction = await createTransaction(
+      userId,
+      payoutId,
+      -withdrawalAmount,
+      "withdrawal",
+      correspondent,
+      e164Phone
+    );
+
+    await updateTransactionStatus(payoutId, "processing");
+
     let pawaPayResponse: PawaPayPayoutResponse;
 
     try {
       pawaPayResponse = await initiatePawaPayPayout({
-  payoutId,
-  amount: String(Number(amount).toFixed(2)),
-  currency,
-  country: userCountry,
-  correspondent,
-  recipient: {
-    type: "MSISDN",
-    address: {
-      value: e164Phone,
-    },
-  },
-  customerTimestamp: new Date().toISOString(),
-  statementDescription: "LTC withdrawal",
-  clientReferenceId: userId,
-  callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
-});
-       } catch (error: any) {
-  console.error("PawaPay withdrawal request failed:", {
-    message: error?.message,
-    status: error?.response?.status,
-    data: error?.response?.data,
-    headers: error?.response?.headers,
-    method: error?.config?.method,
-    url: error?.config?.url,
-  });
-
-  await updateWalletBalance(userId, Number(amount));
-
-  throw error;
-}
+        payoutId,
+        amount: withdrawalAmount.toFixed(2),
+        currency,
+        country: userCountry,
+        correspondent,
+        recipient: {
+          type: "MSISDN",
+          address: {
+            value: e164Phone,
+          },
+        },
+        customerTimestamp: new Date().toISOString(),
+        statementDescription: "LTC withdrawal",
+        clientReferenceId: userId,
+        callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
+      });
+    } catch (error) {
+      await updateWalletBalance(userId, withdrawalAmount);
+      await updateTransactionStatus(payoutId, "failed");
+      throw error;
+    }
 
     if (pawaPayResponse.status === "REJECTED") {
-      await updateWalletBalance(userId, Number(amount));
+      await updateWalletBalance(userId, withdrawalAmount);
+      await updateTransactionStatus(payoutId, "failed");
 
       return res.status(422).json({
         success: false,
@@ -1948,32 +2435,21 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
       });
     }
 
-    const txn = await createTransaction(
-      userId,
-      payoutId,
-      -Number(amount),
-      "withdrawal",
-      correspondent,
-      e164Phone
-    );
-
-    await updateTransactionStatus(payoutId, "processing");
-
     return res.json({
       success: true,
       data: {
         withdrawalId: displayWithdrawalId,
         providerWithdrawalId: payoutId,
-        transactionId: txn.id,
+        transactionId: transaction.id,
         status: "PROCESSING",
-        amount: Number(amount),
+        amount: withdrawalAmount,
         phoneNumber: e164Phone,
         provider: correspondent,
         createdAt:
           pawaPayResponse.created ?? new Date().toISOString(),
       },
     });
-   } catch (error: any) {
+  } catch (error: any) {
     console.error("Withdrawal endpoint failed:", {
       message: error?.message,
       status: error?.response?.status,
@@ -1985,7 +2461,7 @@ app.post("/api/withdrawals", async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: "PawaPay error",
-        details: error.response?.data,
+        details: error.response?.data ?? null,
       });
     }
 
