@@ -1854,7 +1854,6 @@ try {
     statementDescription: "LTC deposit",
     customerMessage: "LTC deposit",
     clientReferenceId: user.id,
-    callbackUrl: `${CALLBACK_BASE_URL}/api/payments/pawapay/callback`,
   });
 } catch (error) {
   await updateTransactionStatus(depositId, "failed");
