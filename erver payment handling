@@ -1,0 +1,376 @@
+warning: in the working copy of 'server/simple/index.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/server/simple/index.ts b/server/simple/index.ts[m
+[1mindex 1f17cd7..12f8a4f 100644[m
+[1m--- a/server/simple/index.ts[m
+[1m+++ b/server/simple/index.ts[m
+[36m@@ -1173,6 +1173,76 @@[m [masync function updateTransactionStatus(depositId: string, status: string): Promi[m
+   await pool.query(`UPDATE ltc_transactions SET status = $1, "updatedAt" = $2 WHERE "depositId" = $3`, [status, now(), depositId]);[m
+ }[m
+ [m
+[32m+[m[32masync function failWithdrawalTransaction([m
+[32m+[m[32m  depositId: string[m
+[32m+[m[32m): Promise<boolean> {[m
+[32m+[m[32m  const client = await pool.connect();[m
+[32m+[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    await client.query("BEGIN");[m
+[32m+[m
+[32m+[m[32m    const result = await client.query<Transaction>([m
+[32m+[m[32m      `[m
+[32m+[m[32m      SELECT *[m
+[32m+[m[32m      FROM ltc_transactions[m
+[32m+[m[32m      WHERE "depositId" = $1[m
+[32m+[m[32m      FOR UPDATE[m
+[32m+[m[32m      `,[m
+[32m+[m[32m      [depositId][m
+[32m+[m[32m    );[m
+[32m+[m
+[32m+[m[32m    const transaction = result.rows[0];[m
+[32m+[m
+[32m+[m[32m    if (!transaction) {[m
+[32m+[m[32m      await client.query("ROLLBACK");[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    if ([m
+[32m+[m[32m      transaction.type !== "withdrawal" ||[m
+[32m+[m[32m      transaction.status === "failed" ||[m
+[32m+[m[32m      transaction.status === "completed"[m
+[32m+[m[32m    ) {[m
+[32m+[m[32m      await client.query("ROLLBACK");[m
+[32m+[m[32m      return false;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    await client.query([m
+[32m+[m[32m      `[m
+[32m+[m[32m      UPDATE ltc_wallets[m
+[32m+[m[32m      SET[m
+[32m+[m[32m        balance = balance + $1,[m
+[32m+[m[32m        "updatedAt" = $2[m
+[32m+[m[32m      WHERE "userId" = $3[m
+[32m+[m[32m      `,[m
+[32m+[m[32m      [[m
+[32m+[m[32m        Math.abs(Number(transaction.amount)),[m
+[32m+[m[32m        now(),[m
+[32m+[m[32m        transaction.userId,[m
+[32m+[m[32m      ][m
+[32m+[m[32m    );[m
+[32m+[m
+[32m+[m[32m    await client.query([m
+[32m+[m[32m      `[m
+[32m+[m[32m      UPDATE ltc_transactions[m
+[32m+[m[32m      SET[m
+[32m+[m[32m        status = 'failed',[m
+[32m+[m[32m        "updatedAt" = $1[m
+[32m+[m[32m      WHERE "depositId" = $2[m
+[32m+[m[32m      `,[m
+[32m+[m[32m      [now(), depositId][m
+[32m+[m[32m    );[m
+[32m+[m
+[32m+[m[32m    await client.query("COMMIT");[m
+[32m+[m[32m    return true;[m
+[32m+[m[32m  } catch (error) {[m
+[32m+[m[32m    await client.query("ROLLBACK");[m
+[32m+[m[32m    throw error;[m
+[32m+[m[32m  } finally {[m
+[32m+[m[32m    client.release();[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m
+ async function completeDepositTransaction([m
+   depositId: string,[m
+   amount: number[m
+[36m@@ -1345,14 +1415,26 @@[m [masync function unlinkAccount(userId: string): Promise<void> {[m
+   await pool.query(`UPDATE ltc_linked_accounts SET "isActive" = 0, "updatedAt" = $1 WHERE "userId" = $2`, [now(), userId]);[m
+ }[m
+ [m
+[32m+[m[32mfunction isValidMobilePhone(phone: unknown): phone is string {[m
+[32m+[m[32m  if (typeof phone !== "string") return false;[m
+[32m+[m
+[32m+[m[32m  const normalized = phone[m
+[32m+[m[32m    .replace(/\s+/g, "")[m
+[32m+[m[32m    .replace(/^\+/, "");[m
+[32m+[m
+[32m+[m[32m  return /^(260|255|0)\d{9}$/.test(normalized);[m
+[32m+[m[32m}[m
+[32m+[m
+ function detectZambiaNetwork(rawPhone: string): string {[m
+   let phone = rawPhone.replace(/\s+/g, "").replace(/^\+/, "");[m
+   if (phone.startsWith("260")) phone = "0" + phone.slice(3);[m
+   if (!phone.startsWith("0")) phone = "0" + phone;[m
+   const p3 = phone.substring(0, 3);[m
+[32m+[m
+   if (p3 === "096" || p3 === "076") return "MTN_MOMO_ZMB";[m
+   if (p3 === "097" || p3 === "077") return "AIRTEL_OAPI_ZMB";[m
+   if (p3 === "095" || p3 === "075") return "ZAMTEL_ZMB";[m
+[32m+[m
+   return "MTN_MOMO_ZMB";[m
+ }[m
+ [m
+[36m@@ -1375,9 +1457,46 @@[m [mfunction toE164(c: string, p: string): string {[m
+ }[m
+ function currencyForCountry(c: string): string { return c === "TZA" ? "TZS" : "ZMW"; }[m
+ [m
+[31m-interface PawaPayDepositRequest { depositId: string; payer: { type: "MMO"; accountDetails: { phoneNumber: string; provider: string } }; amount: string; currency: string; statementDescription?: string; clientReferenceId?: string; customerMessage?: string; callbackUrl?: string; }[m
+[32m+[m[32minterface PawaPayDepositRequest {[m
+[32m+[m[32m  depositId: string;[m
+[32m+[m[32m  payer: {[m
+[32m+[m[32m    type: "MMO";[m
+[32m+[m[32m    accountDetails: {[m
+[32m+[m[32m      phoneNumber: string;[m
+[32m+[m[32m      provider: string;[m
+[32m+[m[32m    };[m
+[32m+[m[32m  };[m
+[32m+[m[32m  amount: string;[m
+[32m+[m[32m  currency: string;[m
+[32m+[m[32m  statementDescription: string;[m
+[32m+[m[32m  clientReferenceId: string;[m
+[32m+[m[32m  callbackUrl: string;[m
+[32m+[m[32m  customerMessage?: string;[m
+[32m+[m[32m}[m
+ interface PawaPayDepositResponse { depositId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }[m
+[31m-interface PawaPayDepositStatusResponse { depositId: string; status: "ACCEPTED" | "COMPLETED" | "FAILED" | "DUPLICATE_IGNORED"; amount?: string; currency?: string; correspondent?: string; payer?: { type: string; accountDetails: { phoneNumber: string } }; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }[m
+[32m+[m[32minterface PawaPayDepositStatusResponse {[m
+[32m+[m[32m  depositId: string;[m
+[32m+[m[32m  status:[m
+[32m+[m[32m    | "ACCEPTED"[m
+[32m+[m[32m    | "COMPLETED"[m
+[32m+[m[32m    | "FAILED"[m
+[32m+[m[32m    | "REJECTED"[m
+[32m+[m[32m    | "DUPLICATE_IGNORED";[m
+[32m+[m[32m  amount?: string;[m
+[32m+[m[32m  currency?: string;[m
+[32m+[m[32m  correspondent?: string;[m
+[32m+[m[32m  payer?: {[m
+[32m+[m[32m    type: string;[m
+[32m+[m[32m    accountDetails: {[m
+[32m+[m[32m      phoneNumber: string;[m
+[32m+[m[32m    };[m
+[32m+[m[32m  };[m
+[32m+[m[32m  created?: string;[m
+[32m+[m[32m  failureReason?: {[m
+[32m+[m[32m    failureCode: string;[m
+[32m+[m[32m    failureMessage: string;[m
+[32m+[m[32m  };[m
+[32m+[m[32m}[m
+ interface PawaPayPayoutRequest {[m
+   payoutId: string;[m
+   amount: string;[m
+[36m@@ -1396,17 +1515,111 @@[m [minterface PawaPayPayoutRequest {[m
+   callbackUrl?: string;[m
+ }[m
+ interface PawaPayPayoutResponse { payoutId: string; status: "ACCEPTED" | "REJECTED" | "DUPLICATE_IGNORED"; created?: string; failureReason?: { failureCode: string; failureMessage: string }; }[m
+[31m-[m
+[32m+[m[32minterface PawaPayPayoutStatusResponse {[m
+[32m+[m[32m  payoutId: string;[m
+[32m+[m[32m  status:[m
+[32m+[m[32m    | "ACCEPTED"[m
+[32m+[m[32m    | "COMPLETED"[m
+[32m+[m[32m    | "FAILED"[m
+[32m+[m[32m    | "REJECTED"[m
+[32m+[m[32m    | "DUPLICATE_IGNORED";[m
+[32m+[m[32m  amount?: string;[m
+[32m+[m[32m  currency?: string;[m
+[32m+[m[32m  correspondent?: string;[m
+[32m+[m[32m  created?: string;[m
+[32m+[m[32m  failureReason?: {[m
+[32m+[m[32m    failureCode: string;[m
+[32m+[m[32m    failureMessage: string;[m
+[32m+[m[32m  };[m
+[32m+[m[32m}[m
+ const pawaPayHeaders = () => ({ Authorization: `Bearer ${process.env.PAWAPAY_PAYOUT_TOKEN || process.env.PAWAPAY_TOKEN || process.env.PAWAPAY_API_KEY}`, "Content-Type": "application/json" });[m
+ [m
+[31m-async function initiatePawaPayDeposit(params: PawaPayDepositRequest): Promise<PawaPayDepositResponse> {[m
+[31m-  const r = await axios.post<PawaPayDepositResponse>(`${PAWAPAY_BASE_URL}/v2/deposits`, params, { headers: pawaPayHeaders(), timeout: 30_000 });[m
+[31m-  return r.data;[m
+[32m+[m[32masync function initiatePawaPayDeposit([m
+[32m+[m[32m  params: PawaPayDepositRequest[m
+[32m+[m[32m): Promise<PawaPayDepositResponse> {[m
+[32m+[m[32m  console.log("PawaPay deposit payload:", JSON.stringify(params, null, 2));[m
+[32m+[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const r = await axios.post<PawaPayDepositResponse>([m
+[32m+[m[32m      `${PAWAPAY_BASE_URL}/v2/deposits`,[m
+[32m+[m[32m      params,[m
+[32m+[m[32m      {[m
+[32m+[m[32m        headers: pawaPayHeaders(),[m
+[32m+[m[32m        timeout: 30_000,[m
+[32m+[m[32m      }[m
+[32m+[m[32m    );[m
+[32m+[m
+[32m+[m[32m    console.log("PawaPay deposit response:", {[m
+[32m+[m[32m      status: r.status,[m
+[32m+[m[32m      data: r.data,[m
+[32m+[m[32m    });[m
+[32m+[m
+[32m+[m[32m    return r.data;[m
+[32m+[m[32m    } catch (error: any) {[m
+[32m+[m[32m    console.error("PawaPay deposit request failed:", {[m
+[32m+[m[32m      status: error?.response?.status,[m
+[32m+[m[32m      data: error?.response?.data,[m
+[32m+[m[32m      message: error?.message,[m
+[32m+[m[32m      url: error?.config?.url,[m
+[32m+[m[32m      method: error?.config?.method,[m
+[32m+[m[32m    });[m
+[32m+[m
+[32m+[m[32m    throw error;[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m[41m [m
+[32m+[m[32masync function fetchPawaPayDepositStatus([m
+[32m+[m[32m  depositId: string[m
+[32m+[m[32m): Promise<PawaPayDepositStatusResponse | null> {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const response =[m
+[32m+[m[32m      await axios.get<PawaPayDepositStatusResponse>([m
+[32m+[m[32m        `${PAWAPAY_BASE_URL}/v1/deposits/${depositId}`,[m
+[32m+[m[32m        {[m
+[32m+[m[32m          headers: pawaPayHeaders(),[m
+[32m+[m[32m          timeout: 15_000,[m
+[32m+[m[32m        }[m
+[32m+[m[32m      );[m
+[32m+[m
+[32m+[m[32m    return response.data;[m
+[32m+[m[32m  } catch (error: any) {[m
+[32m+[m[32m    console.error("Unable to verify deposit with PawaPay:", {[m
+[32m+[m[32m      depositId,[m
+[32m+[m[32m      status: error?.response?.status,[m
+[32m+[m[32m      data: error?.response?.data,[m
+[32m+[m[32m      message: error?.message,[m
+[32m+[m[32m    });[m
+[32m+[m
+[32m+[m[32m    return null;[m
+[32m+[m[32m  }[m
+ }[m
+[31m-async function fetchPawaPayDepositStatus(depositId: string): Promise<PawaPayDepositStatusResponse | null> {[m
+[31m-  try { const r = await axios.get<PawaPayDepositStatusResponse>(`${PAWAPAY_BASE_URL}/v1/deposits/${depositId}`, { headers: pawaPayHeaders(), timeout: 15000 }); return r.data; }[m
+[31m-  catch (e: any) { console.error("PawaPay fetch error:", e.response?.data || e.message); return null; }[m
+[32m+[m
+[32m+[m[32masync function fetchPawaPayPayoutStatus([m
+[32m+[m[32m  payoutId: string[m
+[32m+[m[32m): Promise<PawaPayPayoutStatusResponse | null> {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    const response =[m
+[32m+[m[32m      await axios.get<PawaPayPayoutStatusResponse>([m
+[32m+[m[32m        `${PAWAPAY_BASE_URL}/v1/payouts/${payoutId}`,[m
+[32m+[m[32m        {[m
+[32m+[m[32m          headers: pawaPayHeaders(),[m
+[32m+[m[32m          timeout: 15_000,[m
+[32m+[m[32m        }[m
+[32m+[m[32m      );[m
+[32m+[m
+[32m+[m[32m    return response.data;[m
+[32m+[m[32m  } catch (error: any) {[m
+[32m+[m[32m    console.error("Unable to verify payout with PawaPay:", {[m
+[32m+[m[32m      payoutId,[m
+[32m+[m[32m      status: error?.response?.status,[m
+[32m+[m[32m      data: error?.response?.data,[m
+[32m+[m[32m      message: error?.message,[m
+[32m+[m[32m    });[m
+[32m+[m
+[32m+[m[32m    return null;[m
+[32m+[m[32m  }[m
+ }[m
+[32m+[m
+ async function initiatePawaPayPayout([m
+   params: PawaPayPayoutRequest[m
+ ): Promise<PawaPayPayoutResponse> {[m
+[36m@@ -1449,16 +1662,43 @@[m [mconst app = express();[m
+ app.use(express.json({ limit: "10mb" }));[m
+ app.use(express.raw({ type: "application/octet-stream", limit: "10mb" }));[m
+ [m
+[32m+[m[32mconst allowedOrigins = ([m
+[32m+[m[32m  process.env.ALLOWED_ORIGINS ??[m
+[32m+[m[32m  "http://localhost:3000"[m
+[32m+[m[32m)[m
+[32m+[m[32m  .split(",")[m
+[32m+[m[32m  .map((origin) => origin.trim());[m
+[32m+[m
+ app.use((req: Request, res: Response, next: NextFunction) => {[m
+   const origin = req.headers.origin;[m
+[31m-  if (origin) res.setHeader("Access-Control-Allow-Origin", origin);[m
+[31m-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");[m
+[31m-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, Content-Digest");[m
+[31m-  res.setHeader("Access-Control-Allow-Credentials", "true");[m
+[31m-  if (req.method === "OPTIONS") { res.sendStatus(200); return; }[m
+[32m+[m
+[32m+[m[32m  if (origin && allowedOrigins.includes(origin)) {[m
+[32m+[m[32m    res.setHeader("Access-Control-Allow-Origin", origin);[m
+[32m+[m[32m    res.setHeader("Vary", "Origin");[m
+[32m+[m[32m    res.setHeader("Access-Control-Allow-Credentials", "true");[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  res.setHeader([m
+[32m+[m[32m    "Access-Control-Allow-Methods",[m
+[32m+[m[32m    "GET, POST, PUT, PATCH, DELETE, OPTIONS"[m
+[32m+[m[32m  );[m
+[32m+[m
+[32m+[m[32m  res.setHeader([m
+[32m+[m[32m    "Access-Control-Allow-Headers",[m
+[32m+[m[32m    "Origin, X-Requested-With, Content-Type, Accept, Authorization, Content-Digest"[m
+[32m+[m[32m  );[m
+[32m+[m
+[32m+[m[32m  if (req.method === "OPTIONS") {[m
+[32m+[m[32m    return res.sendStatus(204);[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  next();[m
+[32m+[m[32m});[m
+[32m+[m
+[32m+[m[32mapp.use((req: Request, _res: Response, next: NextFunction) => {[m
+[32m+[m[32m  log("INFO", `${req.method} ${req.path}`);[m
+   next();[m
+ });[m
+[31m-app.use((req: Request, _res: Response, next: NextFunction) => { log("INFO", `${req.method} ${req.path}`); next(); });[m
+ [m
+ app.get("/api/health", (_req, res) => res.json({ ok: true, env: NODE_ENV, pawapay: PAWAPAY_API_KEY ? "configured" : "missing", timestamp: new Date().toISOString() }));[m
+ [m
+[36m@@ -1474,12 +1714,13 @@[m [mapp.post("/api/users", async (req: Request, res: Response) => {[m
+       fullAddress,[m
+     } = req.body;[m
+ [m
+[31m-    if (!phoneNumber) {[m
+[31m-      return res.status(400).json({[m
+[31m-        success: false,[m
+[31m-        message: "Missing phoneNumber",[m
+[31m-      });[m
+[31m-    }[m
+[32m+[m[32m    if (!isValidMobilePhone(phoneNumber)) {[m
+[32m+[m[32m  return res.status(400).json({[m
+[32m+[m[32m    success: false,[m
+[32m+[m[32m    message: "Invalid phone number",[m
+[32m+[m[32m    errorCode: "INVALID_PHONE",[m
+[32m+[m[32m  });[m
+[32m+[m[32m}[m
+ [m
+     console.log("Creating user:", {[m
+       phoneNumber,[m
+[36m@@ -1550,29 +1791,90 @@[m [mapp.post("/api/payments/pawapay", async (req: Request, res: Response) => {[m
+     const e164Phone = toE164(countryCode, phoneNumber);[m
+     const correspondent = detectNetwork(countryCode, phoneNumber);[m
+     const currency = currencyForCountry(countryCode);[m
+[31m-    const depositId = uuidv4();[m
+[31m-    const displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;[m
+[31m-    const pawaPayResponse = await initiatePawaPayDeposit({[m
+[31m-      depositId,[m
+[31m-      payer: {[m
+[31m-        type: "MMO",[m
+[31m-        accountDetails: {[m
+[31m-          phoneNumber: e164Phone,[m
+[31m-          provider: correspondent,[m
+[31m-        },[m
+[32m+[m[32m   const depositId = uuidv4();[m
+[32m+[m
+[32m+[m[32mconst displayDepositId = `LTC-DEP-${Date.now()}-${Math.floor([m
+[32m+[m[32m  Math.random() * 9999[m
+[32m+[m[32m)}`;[m
+[32m+[m
+[32m+[m[32m// Create the local transaction BEFORE calling PawaPay.[m
+[32m+[m[32m// This prevents a callback race condition.[m
+[32m+[m[32mconst transaction = await createTransaction([m
+[32m+[m[32m  user.id,[m
+[32m+[m[32m  depositId,[m
+[32m+[m[32m  Number(amount),[m
+[32m+[m[32m  "deposit",[m
+[32m+[m[32m  correspondent,[m
+[32m+[m[32m  e164Phon

@@ -1851,7 +1851,7 @@ try {
     },
     amount: String(Number(amount).toFixed(2)),
     currency,
-    statementDescription: "LTC deposit",
+    //statementDescription: "LTC deposit",
     customerMessage: "LTC deposit",
     clientReferenceId: user.id,
   });
