@@ -13,9 +13,12 @@ import bcrypt from "bcrypt";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const NODE_ENV = process.env.NODE_ENV ?? "development";
-const PAWAPAY_API_KEY = process.env.PAWAPAY_API_KEY ?? "";
+const PAWAPAY_API_KEY = process.env.PAWAPAY_API_KEY?.trim() ?? "";
 
-if (!PAWAPAY_API_KEY) { console.error("[FATAL] PAWAPAY_API_KEY is not set."); process.exit(1); }
+if (!PAWAPAY_API_KEY) {
+  console.error("[FATAL] PAWAPAY_API_KEY is not set.");
+  process.exit(1);
+}
 
 const PAWAPAY_BASE_URL = NODE_ENV === "production" ? "https://api.pawapay.io" : "https://api.sandbox.pawapay.io";
 const CALLBACK_BASE_URL = process.env.CALLBACK_BASE_URL ?? `http://localhost:${PORT}`;
@@ -1532,7 +1535,10 @@ interface PawaPayPayoutStatusResponse {
     failureMessage: string;
   };
 }
-const pawaPayHeaders = () => ({ Authorization: `Bearer ${process.env.PAWAPAY_PAYOUT_TOKEN || process.env.PAWAPAY_TOKEN || process.env.PAWAPAY_API_KEY}`, "Content-Type": "application/json" });
+const pawaPayHeaders = () => ({
+  Authorization: `Bearer ${PAWAPAY_API_KEY}`,
+  "Content-Type": "application/json"
+});
 
 async function initiatePawaPayDeposit(
   params: PawaPayDepositRequest
