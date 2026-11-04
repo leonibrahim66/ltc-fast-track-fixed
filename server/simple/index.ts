@@ -873,7 +873,7 @@ async function initDB(): Promise<void> {
         CREATE TABLE IF NOT EXISTS garbage_pickups (
           id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
           "customerId" INTEGER NOT NULL REFERENCES users(id),
-          "zoneId" INTEGER NOT NULL REFERENCES zones(id),
+          "zoneId" INTEGER REFERENCES zones(id),
           "zoneManagerId" INTEGER REFERENCES zone_managers(id),
           "driverId" INTEGER REFERENCES driver_profiles(id),
           address TEXT NOT NULL,
@@ -892,6 +892,12 @@ async function initDB(): Promise<void> {
           "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
         );
       `);
+      
+      // Allow customer pickup requests without an assigned zone.
+      await client.query(`
+        ALTER TABLE garbage_pickups
+        ALTER COLUMN "zoneId" DROP NOT NULL;
+     `);
 
       // ============================================================
       // 30. PICKUP ASSIGNMENTS
@@ -2628,44 +2634,12 @@ if (operationalUser.rows[0]) {
     // ------------------------------------------------------------
     // 3. Resolve the zone
     // ------------------------------------------------------------
-    let operationalZoneId: number | null = null;
+   // ------------------------------------------------------------
+// 3. Zone assignment is optional at customer submission.
+// LTC Operations will assign the zone and collector later.
+// ------------------------------------------------------------
 
-    if (zoneId) {
-      const zoneResult = await client.query(
-        `SELECT id FROM zones WHERE id::text = $1 OR name = $1 LIMIT 1`,
-        [String(zoneId)]
-      );
-
-      if (zoneResult.rows[0]) {
-        operationalZoneId = zoneResult.rows[0].id;
-      }
-    }
-
-    // If no valid zone was supplied, find the first active zone.
-    if (!operationalZoneId) {
-      const defaultZone = await client.query(
-        `
-        SELECT id
-        FROM zones
-        WHERE status = 'active'
-        ORDER BY id
-        LIMIT 1
-        `
-      );
-
-      if (defaultZone.rows[0]) {
-        operationalZoneId = defaultZone.rows[0].id;
-      }
-    }
-
-    if (!operationalZoneId) {
-      await client.query("ROLLBACK");
-
-      return res.status(400).json({
-        success: false,
-        message: "No active zone is available for this pickup",
-      });
-    }
+const operationalZoneId: number | null = null;
 
     // ------------------------------------------------------------
     // 4. Create the existing LTC pickup
@@ -2709,7 +2683,7 @@ if (operationalUser.rows[0]) {
         longitude ?? null,
         wasteType ?? "residential",
         notes ?? null,
-        String(operationalZoneId),
+        operationalZoneId === null ? null : String(operationalZoneId),
         scheduledDate ?? null,
         scheduledTime ?? null,
         n,
