@@ -78,7 +78,7 @@ function toPickupRequest(api: ApiPickup): PickupRequest {
   // and set lat/lng to 0 unless the record carries numeric fields in the future.
   const binType = (api.wasteType as PickupRequest["binType"]) ?? "residential";
   return {
-    id: api.id,
+    id: String(api.id),
     userId: api.userId ?? "",
     userPhone: api.phoneNumber ?? "",
     userName: "",
