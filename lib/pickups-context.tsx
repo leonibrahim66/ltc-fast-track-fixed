@@ -135,6 +135,14 @@ export function PickupsProvider({ children }: { children: React.ReactNode }) {
 
   try {
     const apiPickups = await apiFetchPickups();
+    console.log(
+  "[PICKUP ID CHECK]",
+  apiPickups.map((pickup) => ({
+    id: pickup.id,
+    type: typeof pickup.id,
+  }))
+);
+
     setPickups(apiPickups.map(toPickupRequest));
   } catch (err) {
     const msg =
