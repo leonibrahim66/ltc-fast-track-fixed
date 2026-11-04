@@ -19,7 +19,7 @@ import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
 
 /** Shape returned by the backend for a single pickup record. */
 export interface ApiPickup {
-  id: string;
+   id: string | number;
   /** Free-text address string (e.g. "Lusaka CBD") */
   location?: string;
   userId?: string;
@@ -97,7 +97,7 @@ export async function createPickupOnServer(
  * Update a pickup's status or notes.
  */
 export async function updatePickup(
-  id: string,
+  id: string | number,
   payload: UpdatePickupPayload
 ): Promise<ApiPickup> {
   return apiPatch<ApiPickup>(`/api/pickups/${encodeURIComponent(id)}`, payload);
