@@ -234,23 +234,19 @@ const latestUser = await refreshUser();
       }
     }
 
-    const customerZoneId =
-      latestUser.assignedZoneId || latestUser.zoneId || undefined;
-
     const pickupData: any = {
-      userId: latestUser.id,
-      userPhone: latestUser.phone,
-      userName: latestUser.fullName,
-      location: {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        address: address || undefined,
-      },
-      binType,
-      photoUri: photoUri || undefined,
-      notes: notes || undefined,
-      zoneId: customerZoneId,
-    };
+  userId: latestUser.id,
+  userPhone: latestUser.phone,
+  userName: latestUser.fullName,
+  location: {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    address: address || undefined,
+  },
+  binType,
+  photoUri: photoUri || undefined,
+  notes: notes || undefined,
+};
 
     if (pickupType === "scheduled" && selectedDate && selectedTimeSlot) {
       pickupData.scheduledDate = selectedDate.toISOString();
@@ -300,43 +296,6 @@ const latestUser = await refreshUser();
 
     const customerZoneId2 =
       latestUser.assignedZoneId || latestUser.zoneId;
-
-    if (customerZoneId2) {
-      import("@react-native-async-storage/async-storage")
-        .then(({ default: AS }) => {
-          AS.getItem("@ltc_zone_managers")
-            .then((raw) => {
-              if (!raw) return;
-
-              const managers: any[] = JSON.parse(raw);
-
-              const manager = managers.find(
-                (m: any) =>
-                  m.zoneId === customerZoneId2 ||
-                  m.assignedZoneId === customerZoneId2
-              );
-
-              if (manager?.id) {
-                sendNotification({
-                  userId: manager.id,
-                  type: "pickup_update",
-                  title: "New Pickup Request",
-                  body: `${latestUser.fullName || latestUser.phone} submitted a ${binType} pickup request in your zone.`,
-                }).catch(() => {});
-              }
-            })
-            .catch(() => {});
-        })
-        .catch(() => {});
-
-      notifyNewPickupRequest({
-        pickupId: createdPickup.id,
-        customerName:
-          latestUser.fullName || latestUser.phone || "Customer",
-        address: address || "Location pinned",
-        zoneName: String(customerZoneId2),
-      }).catch(() => {});
-    }
 
     const message =
       pickupType === "scheduled"
